@@ -515,6 +515,25 @@ def _register_routes(app):
         status = check_ai_available()
         return jsonify(status)
 
+    @app.route("/api/debug/status")
+    @login_required
+    def api_debug_status():
+        """Debug endpoint — state du bot et vérifications."""
+        uid = session["user_id"]
+        active_session = BotSession.query.filter_by(user_id=uid, status="running").first()
+        articles_count = NewsLog.query.filter_by(user_id=uid).count()
+        positions_count = Position.query.filter_by(user_id=uid, result="OPEN").count()
+
+        return jsonify({
+            "user_id": uid,
+            "bot_running": BotManager.is_running(uid),
+            "session_mode": active_session.mode if active_session else None,
+            "articles_in_db": articles_count,
+            "open_positions": positions_count,
+            "ai_status": check_ai_available(),
+            "markets_cached": len(MARKETS_CACHE.get(uid, [])),
+        })
+
     # ── Healthcheck Railway ───────────────────────────────────────────────────
 
     @app.route("/health")
