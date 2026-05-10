@@ -347,21 +347,29 @@ def estimate_probability(article_title: str, article_summary: str,
     Lève AIUnavailableError si IA indisponible.
     """
     system = (
-        "Tu es un analyste expert en marchés de prédiction (Polymarket). "
+        "Tu es un analyste expert en marchés de prédiction Polymarket. "
         "Tu as accès à Internet — utilise-le pour vérifier les faits actuels. "
         "Réponds UNIQUEMENT en JSON valide. Pas d'explication, juste le JSON."
     )
     prompt = (
-        f"MARCHÉ: {market_question[:250]}\n"
-        f"Probabilité marché actuelle: {current_prob:.1%}\n\n"
+        f"MARCHÉ POLYMARKET: {market_question[:250]}\n"
+        f"Probabilité actuelle du marché: {current_prob:.1%}\n\n"
         f"ACTUALITÉ:\nTitre: {article_title[:200]}\n"
         f"Résumé: {article_summary[:400]}\n\n"
-        "Recherche les dernières infos sur ce sujet et analyse l'impact.\n"
-        "Réponds avec exactement ce JSON:\n"
-        "{\"estimated_prob\":0.72,\"confidence\":75,\"reasoning\":\"une phrase\",\"direction\":\"UP\"}\n\n"
-        "estimated_prob: 0.01 à 0.99 | confidence: 0-100 (conservateur si incertain) | "
-        "direction: UP | DOWN | NEUTRAL\n"
-        "Si edge < 10% vs probabilité marché, mets confidence < 40."
+        "Recherche les dernières infos et analyse l'impact sur ce marché.\n\n"
+        "Réponds avec EXACTEMENT ce JSON (rien d'autre):\n"
+        "{\n"
+        "  \"estimated_prob\": 0.72,\n"
+        "  \"confidence\": 75,\n"
+        "  \"reasoning\": \"Pourquoi cette probabilité en 1-2 phrases\",\n"
+        "  \"direction\": \"UP\",\n"
+        "  \"exit_trigger\": \"Quel événement/date résoudra ce marché\",\n"
+        "  \"thesis\": \"La thèse d'investissement en 1 phrase courte\"\n"
+        "}\n\n"
+        "estimated_prob: 0.01-0.99 | confidence: 0-100 | direction: UP/DOWN/NEUTRAL\n"
+        "exit_trigger: l'événement précis qui résoudra le marché (ex: 'Résultats élection nov 2025')\n"
+        "thesis: la raison principale du trade (ex: 'Momentum post-halving Bitcoin')\n"
+        "Si edge < 8% vs marché, mets confidence < 40."
     )
     raw    = _call_smart(prompt, system=system, max_tokens=350)
     result = _parse_json(raw)
@@ -441,7 +449,9 @@ def batch_analyze(articles: list, markets: list) -> list:
                 "edge":           round(edge, 4),
                 "confidence":     conf,
                 "direction":      analysis["direction"],
-                "reasoning":      analysis["reasoning"],
+                "reasoning":      analysis.get("reasoning", ""),
+                "exit_trigger":   analysis.get("exit_trigger", ""),
+                "thesis":         analysis.get("thesis", ""),
                 "side":           side,
                 "entry_price":    side_price,
             })

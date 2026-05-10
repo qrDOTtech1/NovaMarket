@@ -15,7 +15,7 @@ from engine.polymarket_client import PolyMarketClient, CATEGORIES
 from engine.news_engine import NewsEngine
 from engine.ai_analyst import (batch_analyze, check_ai_available,
                                 AIUnavailableError, set_runtime_config)
-from engine.risk import get_size, expected_value, MAX_ACTIVE_POSITIONS
+from engine.risk import get_size, expected_value, roi_if_win, MAX_ACTIVE_POSITIONS
 from engine.circuit_breaker import CircuitBreaker
 
 logger = logging.getLogger(__name__)
@@ -292,6 +292,7 @@ class MarketWorker(threading.Thread):
 
         # Enregistrement position
         try:
+            roi = roi_if_win(sig["entry_price"])
             pos = Position(
                 session_id=self.session_id, user_id=self.user_id,
                 market_id=market.get("conditionId", market.get("condition_id", "")),
@@ -303,7 +304,9 @@ class MarketWorker(threading.Thread):
                 estimated_prob=sig["estimated_prob"],
                 edge_at_entry=edge,
                 ai_confidence=conf,
-                ai_reasoning=sig.get("reasoning", "")[:300],
+                ai_reasoning=sig.get("reasoning", "")[:400],
+                thesis=sig.get("thesis", "")[:200],
+                exit_trigger=sig.get("exit_trigger", "")[:200],
                 article_title=sig.get("article_title", "")[:200],
                 article_source=sig.get("article_source", ""),
                 ev_usd=ev,

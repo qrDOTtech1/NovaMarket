@@ -89,6 +89,13 @@ class Position(db.Model):
     result         = db.Column(db.String(20), default="OPEN")  # OPEN|WIN|LOSS|CANCELLED
     order_id       = db.Column(db.String(100), nullable=True)
     hours_to_close = db.Column(db.Float, nullable=True)
+    exit_trigger   = db.Column(db.Text, nullable=True)   # événement qui résoudra le marché
+    thesis         = db.Column(db.Text, nullable=True)   # thèse d'investissement
+
+    def roi_if_win(self) -> float:
+        if self.entry_price and self.entry_price > 0:
+            return round((1.0 / self.entry_price - 1.0) * 100, 1)
+        return 0.0
 
     def to_dict(self):
         return {
@@ -102,9 +109,14 @@ class Position(db.Model):
             "estimated_prob":   self.estimated_prob,
             "edge_at_entry":    self.edge_at_entry,
             "ai_confidence":    self.ai_confidence,
+            "ai_reasoning":     self.ai_reasoning,
+            "thesis":           self.thesis,
+            "exit_trigger":     self.exit_trigger,
             "ev_usd":           self.ev_usd,
             "pnl_usd":          self.pnl_usd,
             "result":           self.result,
+            "current_price":    self.current_price,
+            "roi_if_win":       self.roi_if_win(),
         }
 
 
