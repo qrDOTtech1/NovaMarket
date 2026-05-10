@@ -183,6 +183,7 @@ class NewsLog(db.Model):
             "timestamp":   self.timestamp.strftime("%H:%M:%S"),
             "source":      self.source,
             "title":       self.title[:100],
+            "url":         self.url or "",
             "relevance":   self.relevance,
             "signals_gen": self.signals_gen,
         }

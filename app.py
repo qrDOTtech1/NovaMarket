@@ -12,7 +12,7 @@ from flask import (Flask, render_template, request, redirect, url_for,
 from flask_migrate import Migrate
 
 from models import db, User, PolyCredential, BotSession, Position, NewsLog, BotActivity, OllamaConfig
-from worker import BotManager
+from worker import BotManager, MARKETS_CACHE
 from engine.polymarket_client import PolyMarketClient
 from engine.circuit_breaker import CircuitBreaker
 from engine.ai_analyst import check_ai_available, fetch_ollama_models
@@ -42,6 +42,13 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+        # Avertir si SQLite (éphémère sur Railway → données perdues au redeploy)
+        if "sqlite" in db_url:
+            logger.warning(
+                "⚠️  SQLite détecté — les données (clés, sessions, positions) "
+                "seront PERDUES à chaque redéploiement. "
+                "Ajoute PostgreSQL dans Railway et configure DATABASE_URL."
+            )
 
     # Routes
     _register_routes(app)
@@ -341,8 +348,38 @@ def _register_routes(app):
     def api_news():
         news = (NewsLog.query
                 .order_by(NewsLog.timestamp.desc())
-                .limit(30).all())
+                .limit(50).all())
         return jsonify({"news": [n.to_dict() for n in news]})
+
+    @app.route("/api/markets")
+    @login_required
+    def api_markets():
+        uid     = session["user_id"]
+        markets = MARKETS_CACHE.get(uid, [])
+        # Si cache vide (bot pas encore démarré), on tente un fetch live
+        if not markets:
+            try:
+                from engine.polymarket_client import PolyMarketClient, CATEGORIES
+                all_m = []
+                for cat in CATEGORIES[:6]:   # top 6 catégories pour rester rapide
+                    all_m.extend(PolyMarketClient.get_active_markets(category=cat, limit=30))
+                filtered = PolyMarketClient.filter_tradeable(all_m)
+                markets = [
+                    {
+                        "question":   m.get("question", m.get("title", ""))[:120],
+                        "category":   m.get("category", ""),
+                        "yes_price":  round(m.get("_yes_price", 0.5) * 100),
+                        "no_price":   round(m.get("_no_price",  0.5) * 100),
+                        "liquidity":  round(m.get("_liquidity", 0)),
+                        "vol24":      round(m.get("_vol24", 0)),
+                        "hours_left": round(m.get("_hours_left", 0), 1),
+                        "url":        f"https://polymarket.com/event/{m.get('slug', m.get('conditionId',''))}",
+                    }
+                    for m in filtered[:40]
+                ]
+            except Exception as e:
+                logger.error(f"[markets] live fetch: {e}")
+        return jsonify({"markets": markets, "count": len(markets)})
 
     @app.route("/api/balance")
     @login_required

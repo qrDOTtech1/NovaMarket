@@ -57,6 +57,23 @@
   .cb-val  { font-weight:700; color:var(--nova-teal-l); }
   .cb-lbl  { font-size:.68rem; color:var(--nova-muted); text-transform:uppercase; }
 
+  /* ── MARKETS TABLE ── */
+  .markets-table { width:100%; border-collapse:collapse; font-size:.78rem; }
+  .markets-table th { font-size:.65rem; text-transform:uppercase; letter-spacing:.05em; color:var(--nova-muted); padding:.4rem .6rem; text-align:left; border-bottom:1px solid var(--nova-border); font-weight:600; }
+  .markets-table td { padding:.45rem .6rem; border-bottom:1px solid rgba(30,47,64,.4); vertical-align:middle; }
+  .markets-table tr:last-child td { border-bottom:none; }
+  .markets-table tr:hover td { background:rgba(0,137,123,.04); }
+  .mkt-question { color:var(--nova-text); line-height:1.3; }
+  .mkt-question a { color:inherit; text-decoration:none; }
+  .mkt-question a:hover { color:var(--nova-teal-l); }
+  .mkt-yes  { color:#a5d6a7; font-weight:700; }
+  .mkt-no   { color:#ef9a9a; font-weight:700; }
+  .markets-wrap { max-height:320px; overflow-y:auto; }
+  .markets-wrap::-webkit-scrollbar{width:4px} .markets-wrap::-webkit-scrollbar-thumb{background:var(--nova-border);border-radius:2px}
+  .mkt-filter-row { display:flex; gap:.4rem; flex-wrap:wrap; margin-bottom:.6rem; }
+  .mkt-filter { background:none; border:1px solid var(--nova-border); color:var(--nova-muted); border-radius:5px; padding:.2rem .55rem; font-size:.72rem; font-family:inherit; cursor:pointer; transition:all .15s; }
+  .mkt-filter.active,.mkt-filter:hover { background:var(--nova-teal-dim); border-color:rgba(0,137,123,.35); color:var(--nova-teal-l); }
+
   /* ── RSS NEWS STREAM ── */
   .news-stream-wrap { margin-bottom:1rem; }
   .news-stream-header {
@@ -348,6 +365,42 @@
     </div>
   </div>
 
+  <!-- ── MARCHÉS DISPONIBLES ── -->
+  <div class="card" style="margin-bottom:1rem;">
+    <div class="news-stream-header">
+      <div class="news-stream-title">
+        📈 Marchés Polymarket disponibles
+        <span class="models-count" id="mkt-count" style="margin-left:.3rem;">…</span>
+      </div>
+      <div class="mkt-filter-row" id="mkt-filters">
+        <button class="mkt-filter active" onclick="filterMarkets('',this)">Tous</button>
+        <button class="mkt-filter" onclick="filterMarkets('politics',this)">🗳️ Politique</button>
+        <button class="mkt-filter" onclick="filterMarkets('crypto',this)">₿ Crypto</button>
+        <button class="mkt-filter" onclick="filterMarkets('sports',this)">🏆 Sport</button>
+        <button class="mkt-filter" onclick="filterMarkets('pop culture',this)">🎬 Culture</button>
+        <button class="mkt-filter" onclick="filterMarkets('world',this)">🌍 Monde</button>
+      </div>
+    </div>
+    <div class="markets-wrap">
+      <table class="markets-table" id="markets-table">
+        <thead>
+          <tr>
+            <th style="width:45%;">Question</th>
+            <th>Cat.</th>
+            <th>YES</th>
+            <th>NO</th>
+            <th>Liquidité</th>
+            <th>Vol 24h</th>
+            <th>Clôture</th>
+          </tr>
+        </thead>
+        <tbody id="markets-body">
+          <tr><td colspan="7" style="text-align:center;color:var(--nova-muted);padding:1.5rem;">Chargement des marchés…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
   <!-- ── RSS NEWS STREAM ── -->
   <div class="news-stream-wrap card">
     <div class="news-stream-header">
@@ -566,14 +619,18 @@
     item.className = 'ns-item';
     item.setAttribute('data-signals', n.signals_gen || 0);
     item.setAttribute('data-relevance', n.relevance || 0);
-    const src = (n.source||'').substring(0,10);
-    const sc  = sourceClass(n.source||'');
-    const sig = n.signals_gen > 0 ? '<span class="ns-signal">⚡ '+n.signals_gen+' signal'+(n.signals_gen>1?'s':'')+'</span>' : '';
-    const rel = n.relevance > 0 ? '<span class="ns-score">📊 '+n.relevance+'</span>' : '';
+    const src  = (n.source||'').substring(0,10);
+    const sc   = sourceClass(n.source||'');
+    const sig  = n.signals_gen > 0 ? '<span class="ns-signal">⚡ '+n.signals_gen+' signal'+(n.signals_gen>1?'s':'')+'</span>' : '';
+    const rel  = n.relevance > 0  ? '<span class="ns-score">📊 '+n.relevance+'</span>' : '';
+    const ttxt = escHtml((n.title||'').substring(0,120))+((n.title||'').length>120?'…':'');
+    const titleHtml = n.url
+      ? '<a href="'+escHtml(n.url)+'" target="_blank" rel="noopener" style="color:inherit;text-decoration:none;" onmouseover="this.style.color=\'var(--nova-teal-l)\'" onmouseout="this.style.color=\'inherit\'">'+ttxt+' ↗</a>'
+      : ttxt;
     item.innerHTML =
       '<span class="ns-source '+sc+'">'+escHtml(src)+'</span>'+
       '<div class="ns-body">'+
-        '<div class="ns-title">'+escHtml((n.title||'').substring(0,120))+((n.title||'').length>120?'…':'')+'</div>'+
+        '<div class="ns-title">'+titleHtml+'</div>'+
         '<div class="ns-meta"><span>'+escHtml(n.timestamp||'')+'</span>'+rel+sig+'</div>'+
       '</div>';
     return item;
@@ -666,8 +723,56 @@
     return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  /* ── Marchés ── */
+  let allMarkets = [];
+  let mktFilter  = '';
+
+  function loadMarkets() {
+    fetch('/api/markets').then(r=>r.json()).then(d=>{
+      allMarkets = d.markets || [];
+      document.getElementById('mkt-count').textContent = allMarkets.length + ' marchés';
+      renderMarkets();
+    }).catch(()=>{});
+  }
+
+  function filterMarkets(cat, btn) {
+    mktFilter = cat;
+    document.querySelectorAll('.mkt-filter').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    renderMarkets();
+  }
+
+  function renderMarkets() {
+    const tbody = document.getElementById('markets-body');
+    const list  = mktFilter ? allMarkets.filter(m=>(m.category||'').includes(mktFilter)) : allMarkets;
+    if (!list.length) {
+      tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--nova-muted);padding:1.5rem;">Aucun marché disponible pour ce filtre</td></tr>';
+      return;
+    }
+    tbody.innerHTML = list.slice(0,50).map(m=>{
+      const q = escHtml((m.question||'').substring(0,80))+((m.question||'').length>80?'…':'');
+      const link = m.url ? '<a href="'+escHtml(m.url)+'" target="_blank" rel="noopener" class="mkt-question">'+q+' ↗</a>' : q;
+      const cat  = escHtml((m.category||'').substring(0,12));
+      const h    = m.hours_left >= 24 ? Math.round(m.hours_left/24)+'j' : m.hours_left+'h';
+      const liq  = m.liquidity >= 1000 ? (m.liquidity/1000).toFixed(1)+'k' : m.liquidity;
+      const vol  = m.vol24 >= 1000 ? (m.vol24/1000).toFixed(1)+'k' : m.vol24;
+      return '<tr>'+
+        '<td class="mkt-question">'+link+'</td>'+
+        '<td><span class="badge badge-muted" style="font-size:.63rem;">'+cat+'</span></td>'+
+        '<td class="mkt-yes">'+m.yes_price+'%</td>'+
+        '<td class="mkt-no">'+m.no_price+'%</td>'+
+        '<td style="color:var(--nova-muted);">'+liq+'$</td>'+
+        '<td style="color:var(--nova-muted);">'+vol+'$</td>'+
+        '<td style="color:var(--nova-muted);">'+h+'</td>'+
+      '</tr>';
+    }).join('');
+  }
+
   pollBalance(); pollAIStatus(); updateModeHint();
+  loadMarkets();
   setInterval(pollAIStatus, 60000);
+  setInterval(loadMarkets,  120000);  // refresh marchés toutes les 2min
+
   // News poll même quand bot arrêté (les flux tournent indépendamment)
   pollNews();
   setInterval(pollNews, 12000);

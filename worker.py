@@ -20,6 +20,9 @@ from engine.circuit_breaker import CircuitBreaker
 
 logger = logging.getLogger(__name__)
 
+# Cache partagé marchés (user_id → liste) — lisible depuis app.py
+MARKETS_CACHE: dict = {}
+
 NEWS_INTERVAL     = 60    # refresh RSS toutes les 60s
 POSITION_INTERVAL = 120   # check positions ouvertes toutes les 2min
 MARKET_INTERVAL   = 300   # refresh liste marchés toutes les 5min
@@ -184,6 +187,20 @@ class MarketWorker(threading.Thread):
         for cat in CATEGORIES:
             all_markets.extend(client.get_active_markets(category=cat, limit=50))
         self._markets = client.filter_tradeable(all_markets)
+        # Mettre à jour le cache global (lisible depuis les routes Flask)
+        MARKETS_CACHE[self.user_id] = [
+            {
+                "question":   m.get("question", m.get("title", ""))[:120],
+                "category":   m.get("category", ""),
+                "yes_price":  round(m.get("_yes_price", 0.5) * 100),
+                "no_price":   round(m.get("_no_price",  0.5) * 100),
+                "liquidity":  round(m.get("_liquidity", 0)),
+                "vol24":      round(m.get("_vol24", 0)),
+                "hours_left": round(m.get("_hours_left", 0), 1),
+                "url":        f"https://polymarket.com/event/{m.get('slug', m.get('conditionId',''))}",
+            }
+            for m in self._markets[:60]
+        ]
         self._log("info", "🔄",
                   f"Marchés refreshés — {len(self._markets)} tradables "
                   f"({len(all_markets)} scannés)")
