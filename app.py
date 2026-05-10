@@ -11,11 +11,11 @@ from flask import (Flask, render_template, request, redirect, url_for,
                    flash, session, jsonify)
 from flask_migrate import Migrate
 
-from models import db, User, PolyCredential, BotSession, Position, NewsLog, BotActivity
+from models import db, User, PolyCredential, BotSession, Position, NewsLog, BotActivity, OllamaConfig
 from worker import BotManager
 from engine.polymarket_client import PolyMarketClient
 from engine.circuit_breaker import CircuitBreaker
-from engine.ai_analyst import check_ai_available
+from engine.ai_analyst import check_ai_available, fetch_ollama_models
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -337,6 +337,58 @@ def _register_routes(app):
             return jsonify({"ok": True, "usdc": round(balance, 2)})
         except Exception as e:
             return jsonify({"ok": False, "usdc": 0, "error": str(e)})
+
+    # ── Settings Ollama ───────────────────────────────────────────────────────
+
+    @app.route("/settings/ollama", methods=["GET", "POST"])
+    @login_required
+    def settings_ollama():
+        uid = session["user_id"]
+        cfg = OllamaConfig.query.filter_by(user_id=uid).first()
+
+        if request.method == "POST":
+            ollama_url = request.form.get("ollama_url", "").strip().rstrip("/")
+            api_key    = request.form.get("api_key", "").strip()
+            model_fast = request.form.get("model_fast", "").strip()
+            model_smart= request.form.get("model_smart", "").strip()
+
+            if not ollama_url:
+                flash("L'URL Ollama Cloud est requise.", "error")
+                return render_template("settings_ollama.html", cfg=cfg, models=[])
+
+            if not cfg:
+                cfg = OllamaConfig(user_id=uid)
+                db.session.add(cfg)
+
+            cfg.ollama_url = ollama_url
+            if api_key:
+                cfg.set_api_key(api_key)
+            cfg.model_fast  = model_fast  or cfg.model_fast
+            cfg.model_smart = model_smart or cfg.model_smart
+            cfg.verified_at = datetime.utcnow()
+            db.session.commit()
+            flash("Configuration Ollama Cloud sauvegardée ✅", "success")
+            return redirect(url_for("settings_ollama"))
+
+        return render_template("settings_ollama.html", cfg=cfg, models=[])
+
+    @app.route("/api/ollama/models")
+    @login_required
+    def api_ollama_models():
+        """Récupère la liste des modèles depuis l'instance Ollama Cloud."""
+        url     = request.args.get("url", "").strip()
+        api_key = request.args.get("api_key", "").strip()
+
+        # Si pas passé en param, tenter depuis la DB
+        if not url:
+            uid = session["user_id"]
+            cfg = OllamaConfig.query.filter_by(user_id=uid).first()
+            if cfg:
+                url     = cfg.ollama_url or ""
+                api_key = api_key or cfg.get_api_key()
+
+        result = fetch_ollama_models(url, api_key)
+        return jsonify(result)
 
     @app.route("/api/ai-status")
     @login_required

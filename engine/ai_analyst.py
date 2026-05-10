@@ -23,11 +23,11 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# ── Config Ollama Cloud ───────────────────────────────────────────────────────
-OLLAMA_URL     = os.environ.get("OLLAMA_URL",     "")          # URL cloud obligatoire
-OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY", "")          # clé si requise
-OLLAMA_FAST    = os.environ.get("OLLAMA_FAST",    "llama3.1:8b")
-OLLAMA_SMART   = os.environ.get("OLLAMA_SMART",   "llama3.1:8b")
+# ── Config Ollama Cloud (env vars = fallback si DB non dispo) ─────────────────
+OLLAMA_URL     = os.environ.get("OLLAMA_URL",     "")
+OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
+OLLAMA_FAST    = os.environ.get("OLLAMA_FAST",    "")
+OLLAMA_SMART   = os.environ.get("OLLAMA_SMART",   "")
 OLLAMA_TIMEOUT = 15
 
 # ── Config Perplexity ─────────────────────────────────────────────────────────
@@ -36,6 +36,92 @@ PERPLEXITY_URL  = "https://api.perplexity.ai/chat/completions"
 PPLX_FAST_MODEL = "llama-3.1-sonar-small-128k-online"   # classify / match
 PPLX_SMART_MODEL= "llama-3.1-sonar-large-128k-online"   # estimate_prob (web search)
 PPLX_TIMEOUT    = 20
+
+
+# ── Runtime config (surchargé par worker depuis DB) ───────────────────────────
+_runtime: dict = {}
+
+def set_runtime_config(url: str, api_key: str, model_fast: str, model_smart: str):
+    """Appelé par le worker au démarrage pour injecter la config DB."""
+    global _runtime
+    _runtime = {
+        "url":         url or OLLAMA_URL,
+        "api_key":     api_key or OLLAMA_API_KEY,
+        "model_fast":  model_fast or OLLAMA_FAST or "llama3.1:8b",
+        "model_smart": model_smart or OLLAMA_SMART or "llama3.1:8b",
+    }
+    logger.info(
+        f"[AI] Config Ollama Cloud → {_runtime['url']} | "
+        f"fast={_runtime['model_fast']} smart={_runtime['model_smart']}"
+    )
+
+def _get_ollama_url()     -> str: return _runtime.get("url",         OLLAMA_URL)
+def _get_ollama_key()     -> str: return _runtime.get("api_key",     OLLAMA_API_KEY)
+def _get_model_fast()     -> str: return _runtime.get("model_fast",  OLLAMA_FAST or "llama3.1:8b")
+def _get_model_smart()    -> str: return _runtime.get("model_smart", OLLAMA_SMART or "llama3.1:8b")
+
+
+# ── Helpers pour lister les modèles cloud ─────────────────────────────────────
+
+MODEL_RECOMMENDATIONS = {
+    # Modèles dont on connaît le rôle optimal
+    "fast":  ["8b", "small", "mini", "tiny", "fast"],
+    "smart": ["70b", "72b", "large", "pro", "405b", "ultra"],
+}
+
+def _score_model(name: str) -> dict:
+    """Retourne un dict de métadonnées pour affichage dans l'UI."""
+    n = name.lower()
+    is_cloud = "cloud" in n
+
+    # Recommandation
+    rec_fast  = any(k in n for k in MODEL_RECOMMENDATIONS["fast"])
+    rec_smart = any(k in n for k in MODEL_RECOMMENDATIONS["smart"])
+
+    if rec_smart:
+        badge = "smart"
+        hint  = "Idéal pour analyse approfondie (estimation probabilité)"
+    elif rec_fast:
+        badge = "fast"
+        hint  = "Idéal pour classification rapide et matching de marchés"
+    else:
+        badge = "general"
+        hint  = "Usage général"
+
+    return {
+        "name":     name,
+        "is_cloud": is_cloud,
+        "badge":    badge,
+        "hint":     hint,
+    }
+
+
+def fetch_ollama_models(url: str, api_key: str) -> dict:
+    """
+    Récupère la liste des modèles disponibles sur l'instance Ollama Cloud.
+    Retourne {"ok": bool, "models": list, "error": str}
+    """
+    if not url:
+        return {"ok": False, "models": [], "error": "OLLAMA_URL non renseigné"}
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    try:
+        resp = requests.get(
+            f"{url.rstrip('/')}/api/tags",
+            headers=headers,
+            timeout=8,
+        )
+        if resp.status_code != 200:
+            return {"ok": False, "models": [],
+                    "error": f"HTTP {resp.status_code} — {resp.text[:200]}"}
+        data   = resp.json()
+        raw    = data.get("models", [])
+        models = [_score_model(m["name"] if isinstance(m, dict) else m) for m in raw]
+        # Cloud models en premier, puis par badge smart > fast > general
+        order = {"smart": 0, "fast": 1, "general": 2}
+        models.sort(key=lambda m: (not m["is_cloud"], order.get(m["badge"], 3)))
+        return {"ok": True, "models": models, "error": ""}
+    except Exception as e:
+        return {"ok": False, "models": [], "error": str(e)}
 
 
 class AIUnavailableError(Exception):
@@ -47,14 +133,14 @@ class AIUnavailableError(Exception):
 
 def _call_ollama(model: str, prompt: str, max_tokens: int = 200) -> Optional[str]:
     """Appel Ollama Cloud /api/generate — retourne None si indisponible."""
-    if not OLLAMA_URL:
+    url = _get_ollama_url()
+    key = _get_ollama_key()
+    if not url:
         return None  # URL cloud non configurée
-    headers = {}
-    if OLLAMA_API_KEY:
-        headers["Authorization"] = f"Bearer {OLLAMA_API_KEY}"
+    headers = {"Authorization": f"Bearer {key}"} if key else {}
     try:
         resp = requests.post(
-            f"{OLLAMA_URL.rstrip('/')}/api/generate",
+            f"{url.rstrip('/')}/api/generate",
             headers=headers,
             json={
                 "model": model,
@@ -107,11 +193,11 @@ def _call_perplexity(model: str, prompt: str, max_tokens: int = 300,
 def _call_fast(prompt: str, max_tokens: int = 150) -> str:
     """
     Appel rapide (classify, match marchés) :
-      1. Ollama Cloud  → rapide, économique
+      1. Ollama Cloud  → modèle fast sélectionné par l'utilisateur
       2. Perplexity    → fallback si Ollama cloud down
     Lève AIUnavailableError si les deux échouent.
     """
-    raw = _call_ollama(OLLAMA_FAST, prompt, max_tokens)
+    raw = _call_ollama(_get_model_fast(), prompt, max_tokens)
     if raw is not None:
         return raw
     logger.info("[AI] Ollama Cloud indisponible — fallback Perplexity fast")
@@ -125,14 +211,14 @@ def _call_smart(prompt: str, system: str = "", max_tokens: int = 400) -> str:
     """
     Appel analytique profond (estimation probabilité) :
       1. Perplexity sonar-large-online → priorité absolue (accès web temps réel)
-      2. Ollama Cloud                  → fallback si Perplexity down
+      2. Ollama Cloud                  → fallback avec modèle smart sélectionné
     Lève AIUnavailableError si les deux échouent.
     """
     raw = _call_perplexity(PPLX_SMART_MODEL, prompt, max_tokens, system)
     if raw is not None:
         return raw
     logger.info("[AI] Perplexity indisponible — fallback Ollama Cloud smart")
-    raw = _call_ollama(OLLAMA_SMART, prompt, max_tokens)
+    raw = _call_ollama(_get_model_smart(), prompt, max_tokens)
     if raw is not None:
         return raw
     raise AIUnavailableError("Perplexity et Ollama Cloud indisponibles")
@@ -162,14 +248,12 @@ def check_ai_available() -> dict:
     pplx_ok   = False
 
     # Test Ollama Cloud (ping /api/tags)
-    if OLLAMA_URL:
+    url = _get_ollama_url()
+    key = _get_ollama_key()
+    if url:
         try:
-            headers = {"Authorization": f"Bearer {OLLAMA_API_KEY}"} if OLLAMA_API_KEY else {}
-            r = requests.get(
-                f"{OLLAMA_URL.rstrip('/')}/api/tags",
-                headers=headers,
-                timeout=6,
-            )
+            headers = {"Authorization": f"Bearer {key}"} if key else {}
+            r = requests.get(f"{url.rstrip('/')}/api/tags", headers=headers, timeout=6)
             ollama_ok = r.status_code == 200
         except Exception as e:
             logger.debug(f"[AI] Ollama Cloud ping failed: {e}")

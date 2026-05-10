@@ -1,0 +1,400 @@
+{% extends "base.html" %}
+{% block title %}Paramètres IA — NovaMarket{% endblock %}
+{% block extra_head %}
+<style>
+  .settings-wrap { max-width: 680px; margin: 1.5rem auto; padding: 0 1rem; }
+  .settings-title { font-size: 1.3rem; font-weight: 700; margin-bottom: .3rem; }
+  .settings-sub   { color: var(--nova-muted); font-size: .85rem; margin-bottom: 1.5rem; line-height: 1.5; }
+
+  /* ── Connection card ── */
+  .conn-card {
+    background: var(--nova-surface);
+    border: 1px solid var(--nova-border);
+    border-radius: var(--nova-radius);
+    padding: 1.25rem;
+    margin-bottom: 1rem;
+  }
+  .conn-card-title {
+    font-size: .75rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em;
+    color: var(--nova-muted); margin-bottom: 1rem;
+  }
+  .input-row { display: flex; gap: .5rem; align-items: flex-end; flex-wrap: wrap; }
+  .input-row .form-group { flex: 1; min-width: 200px; margin-bottom: 0; }
+
+  /* ── Fetch button ── */
+  .btn-fetch {
+    background: var(--nova-teal-dim);
+    border: 1px solid rgba(0,137,123,.3);
+    color: var(--nova-teal-l);
+    padding: .6rem 1.1rem;
+    border-radius: 7px;
+    font-size: .875rem;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all .2s;
+    white-space: nowrap;
+  }
+  .btn-fetch:hover { background: rgba(0,137,123,.2); }
+  .btn-fetch:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ── Models grid ── */
+  .models-section { margin-top: 1.5rem; }
+  .models-title {
+    font-size: .75rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em;
+    color: var(--nova-muted); margin-bottom: 1rem;
+    display: flex; align-items: center; gap: .5rem;
+  }
+  .models-count {
+    background: var(--nova-teal-dim);
+    color: var(--nova-teal-l);
+    font-size: .7rem;
+    padding: .1rem .5rem;
+    border-radius: 10px;
+  }
+  .models-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: .6rem;
+  }
+
+  /* ── Model card ── */
+  .model-card {
+    background: var(--nova-bg);
+    border: 2px solid var(--nova-border);
+    border-radius: 9px;
+    padding: .85rem;
+    cursor: pointer;
+    transition: all .18s;
+    position: relative;
+    user-select: none;
+  }
+  .model-card:hover { border-color: var(--nova-teal); background: rgba(0,137,123,.04); }
+  .model-card.selected-fast  { border-color: #66BB6A; background: rgba(102,187,106,.07); }
+  .model-card.selected-smart { border-color: var(--nova-gold); background: rgba(255,179,0,.07); }
+
+  .model-name {
+    font-size: .82rem; font-weight: 700;
+    word-break: break-all; line-height: 1.3;
+    margin-bottom: .4rem;
+  }
+  .model-badge-row { display: flex; gap: .3rem; flex-wrap: wrap; margin-bottom: .4rem; }
+  .model-hint { font-size: .72rem; color: var(--nova-muted); line-height: 1.4; }
+
+  .badge-cloud { background: rgba(0,137,123,.15); color: var(--nova-teal-l); }
+  .badge-smart { background: rgba(255,179,0,.15);  color: var(--nova-gold); }
+  .badge-fast  { background: rgba(102,187,106,.15);color: #a5d6a7; }
+  .badge-gen   { background: rgba(122,150,170,.1); color: var(--nova-muted); }
+
+  /* Selection tags in corner */
+  .sel-tag {
+    position: absolute; top: .4rem; right: .4rem;
+    font-size: .65rem; font-weight: 700;
+    padding: .1rem .45rem; border-radius: 10px;
+  }
+  .sel-tag-fast  { background: rgba(102,187,106,.2); color: #a5d6a7; }
+  .sel-tag-smart { background: rgba(255,179,0,.2);   color: #ffe082; }
+
+  /* ── Selected summary ── */
+  .selection-summary {
+    background: var(--nova-surface);
+    border: 1px solid var(--nova-border);
+    border-radius: var(--nova-radius);
+    padding: 1rem 1.25rem;
+    margin: 1.25rem 0;
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+  }
+  .sel-item { flex: 1; min-width: 150px; }
+  .sel-label { font-size: .7rem; text-transform: uppercase; color: var(--nova-muted); letter-spacing: .05em; margin-bottom: .2rem; }
+  .sel-val   { font-size: .88rem; font-weight: 700; font-family: monospace; }
+  .sel-val.ok    { color: var(--nova-teal-l); }
+  .sel-val.empty { color: var(--nova-muted); font-style: italic; font-family: inherit; }
+
+  /* ── Current config badge ── */
+  .current-config {
+    background: rgba(102,187,106,.07);
+    border: 1px solid rgba(102,187,106,.2);
+    border-radius: 8px;
+    padding: .75rem 1rem;
+    margin-bottom: 1.25rem;
+    font-size: .82rem;
+    display: flex; gap: 1rem; flex-wrap: wrap;
+  }
+  .cc-item { display: flex; flex-direction: column; gap: .15rem; }
+  .cc-lbl  { font-size: .68rem; color: var(--nova-muted); text-transform: uppercase; }
+  .cc-val  { font-weight: 600; color: var(--nova-green); font-family: monospace; font-size: .8rem; }
+
+  /* ── Error box ── */
+  .err-box {
+    background: rgba(239,83,80,.1);
+    border: 1px solid rgba(239,83,80,.25);
+    border-radius: 8px;
+    padding: .75rem 1rem;
+    color: #ef9a9a;
+    font-size: .82rem;
+    margin-top: .75rem;
+    display: none;
+  }
+
+  /* ── Loading skeleton ── */
+  .skeleton {
+    background: linear-gradient(90deg, var(--nova-border) 25%, var(--nova-surface) 50%, var(--nova-border) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.2s infinite;
+    border-radius: 6px;
+    height: 80px;
+  }
+  @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+  .hidden { display: none !important; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="settings-wrap">
+  <div class="settings-title">🤖 Configuration IA — Ollama Cloud</div>
+  <div class="settings-sub">
+    Connecte ton instance Ollama Cloud et choisis les modèles à utiliser.
+    Le modèle <strong>rapide</strong> gère la classification des news et le matching des marchés.
+    Le modèle <strong>smart</strong> est le fallback de Perplexity pour l'estimation de probabilité.
+  </div>
+
+  {% if cfg and cfg.verified_at %}
+  <div class="current-config">
+    <div class="cc-item">
+      <span class="cc-lbl">URL Ollama Cloud</span>
+      <span class="cc-val">{{ cfg.ollama_url or '—' }}</span>
+    </div>
+    <div class="cc-item">
+      <span class="cc-lbl">Modèle rapide</span>
+      <span class="cc-val">{{ cfg.model_fast or 'non défini' }}</span>
+    </div>
+    <div class="cc-item">
+      <span class="cc-lbl">Modèle smart</span>
+      <span class="cc-val">{{ cfg.model_smart or 'non défini' }}</span>
+    </div>
+    <div class="cc-item">
+      <span class="cc-lbl">Mis à jour</span>
+      <span class="cc-val" style="color:var(--nova-teal-l);">{{ cfg.verified_at.strftime('%d/%m/%Y %H:%M') }}</span>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- ── Step 1 : URL + clé ── -->
+  <div class="conn-card">
+    <div class="conn-card-title">Étape 1 — Connexion Ollama Cloud</div>
+    <div class="input-row">
+      <div class="form-group">
+        <label class="form-label">URL Ollama Cloud</label>
+        <input class="form-control" type="url" id="ollama-url"
+               placeholder="https://ton-ollama.railway.app"
+               value="{{ cfg.ollama_url or '' }}"/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Clé API <span style="color:var(--nova-muted);font-weight:400;">(optionnel)</span></label>
+        <input class="form-control" type="password" id="ollama-key"
+               placeholder="••••••••" autocomplete="off"/>
+      </div>
+      <button class="btn-fetch" id="fetch-btn" onclick="fetchModels()">
+        🔍 Voir les modèles
+      </button>
+    </div>
+    <div class="err-box" id="err-box"></div>
+  </div>
+
+  <!-- ── Step 2 : Sélection modèles ── -->
+  <div class="models-section" id="models-section" style="display:none;">
+    <div class="models-title">
+      Étape 2 — Choisir les modèles
+      <span class="models-count" id="models-count">0 modèles</span>
+    </div>
+
+    <div style="font-size:.78rem; color:var(--nova-muted); margin-bottom:.75rem; line-height:1.5;">
+      Clique <span style="color:#a5d6a7; font-weight:600;">une fois</span> pour le modèle <strong>rapide</strong> (🟢),
+      <span style="color:#ffe082; font-weight:600;">deux fois</span> pour le modèle <strong>smart</strong> (🟡).
+      Les modèles cloud <span class="badge badge-teal" style="font-size:.7rem;">cloud</span> sont recommandés.
+    </div>
+
+    <!-- Légende recommandations -->
+    <div style="display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:1rem; font-size:.75rem;">
+      <span>Recommandations :</span>
+      <span class="badge badge-fast">⚡ rapide</span> <span style="color:var(--nova-muted);">→ 8b, small, mini</span>
+      <span style="margin-left:.5rem;" class="badge badge-smart">🧠 smart</span> <span style="color:var(--nova-muted);">→ 70b, large, pro</span>
+    </div>
+
+    <div class="models-grid" id="models-grid">
+      <!-- rempli par JS -->
+    </div>
+
+    <!-- Résumé sélection -->
+    <div class="selection-summary" id="selection-summary">
+      <div class="sel-item">
+        <div class="sel-label">⚡ Modèle rapide sélectionné</div>
+        <div class="sel-val empty" id="disp-fast">Non sélectionné</div>
+      </div>
+      <div class="sel-item">
+        <div class="sel-label">🧠 Modèle smart sélectionné</div>
+        <div class="sel-val empty" id="disp-smart">Non sélectionné</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Step 3 : Sauvegarder ── -->
+  <div id="save-section" style="display:none;">
+    <form method="POST" id="save-form">
+      <input type="hidden" name="ollama_url"   id="form-url"/>
+      <input type="hidden" name="api_key"      id="form-key"/>
+      <input type="hidden" name="model_fast"   id="form-fast"/>
+      <input type="hidden" name="model_smart"  id="form-smart"/>
+      <button type="submit" class="btn btn-primary w-full" id="save-btn">
+        💾 Sauvegarder la configuration
+      </button>
+    </form>
+  </div>
+
+  <div style="margin-top:1rem;">
+    <a href="{{ url_for('dashboard') }}" class="btn btn-ghost">← Retour au dashboard</a>
+  </div>
+</div>
+
+<script>
+  let selectedFast  = "{{ cfg.model_fast  or '' }}";
+  let selectedSmart = "{{ cfg.model_smart or '' }}";
+  let allModels     = [];
+
+  /* ─── Fetch models ──────────────────────────────────── */
+  function fetchModels() {
+    const url = document.getElementById('ollama-url').value.trim();
+    const key = document.getElementById('ollama-key').value.trim();
+    if (!url) { showErr("Renseigne l'URL Ollama Cloud."); return; }
+
+    const btn = document.getElementById('fetch-btn');
+    btn.disabled = true; btn.textContent = '⏳ Chargement…';
+    hideErr();
+
+    // Show skeletons
+    const section = document.getElementById('models-section');
+    const grid    = document.getElementById('models-grid');
+    section.style.display = 'block';
+    grid.innerHTML = '<div class="skeleton"></div>'.repeat(6);
+
+    const params = new URLSearchParams({ url, api_key: key });
+    fetch('/api/ollama/models?' + params)
+      .then(r => r.json())
+      .then(data => {
+        btn.disabled = false; btn.textContent = '🔍 Voir les modèles';
+        if (!data.ok) { showErr(data.error || 'Erreur inconnue'); grid.innerHTML=''; return; }
+        allModels = data.models;
+        renderModels(allModels);
+        document.getElementById('models-count').textContent = allModels.length + ' modèle(s)';
+        document.getElementById('save-section').style.display = 'block';
+        // Pre-fill form URL/key
+        document.getElementById('form-url').value = url;
+        document.getElementById('form-key').value = key;
+      })
+      .catch(e => {
+        btn.disabled = false; btn.textContent = '🔍 Voir les modèles';
+        showErr('Erreur réseau : ' + e.message);
+        grid.innerHTML = '';
+      });
+  }
+
+  /* ─── Render model cards ────────────────────────────── */
+  function renderModels(models) {
+    const grid = document.getElementById('models-grid');
+    grid.innerHTML = '';
+    if (!models.length) {
+      grid.innerHTML = '<div class="no-data" style="grid-column:1/-1;padding:1.5rem;text-align:center;color:var(--nova-muted);">Aucun modèle trouvé</div>';
+      return;
+    }
+    models.forEach(m => {
+      const card = document.createElement('div');
+      card.className = 'model-card' + getSelClass(m.name);
+      card.setAttribute('data-name', m.name);
+      card.onclick = () => toggleSelect(m.name, card);
+
+      const badges = [];
+      if (m.is_cloud) badges.push('<span class="badge badge-cloud">☁️ cloud</span>');
+      if (m.badge === 'smart') badges.push('<span class="badge badge-smart">🧠 smart</span>');
+      else if (m.badge === 'fast') badges.push('<span class="badge badge-fast">⚡ rapide</span>');
+      else badges.push('<span class="badge badge-gen">général</span>');
+
+      const selTag = getSelTag(m.name);
+
+      card.innerHTML =
+        (selTag ? '<span class="sel-tag ' + (selectedFast === m.name ? 'sel-tag-fast' : 'sel-tag-smart') + '">' + selTag + '</span>' : '') +
+        '<div class="model-name">' + escHtml(m.name) + '</div>' +
+        '<div class="model-badge-row">' + badges.join('') + '</div>' +
+        '<div class="model-hint">' + escHtml(m.hint) + '</div>';
+
+      grid.appendChild(card);
+    });
+    updateSummary();
+  }
+
+  /* ─── Toggle select (1 click = fast, 2 clicks = smart, 3 = deselect) ─────── */
+  function toggleSelect(name, card) {
+    if (selectedFast === name) {
+      // Was fast → become smart
+      selectedFast  = '';
+      selectedSmart = name;
+    } else if (selectedSmart === name) {
+      // Was smart → deselect
+      selectedSmart = '';
+    } else if (!selectedFast) {
+      selectedFast = name;
+    } else if (!selectedSmart) {
+      selectedSmart = name;
+    } else {
+      // Both taken → replace fast
+      selectedFast = name;
+    }
+    renderModels(allModels);
+    updateSummary();
+  }
+
+  function getSelClass(name) {
+    if (selectedFast  === name) return ' selected-fast';
+    if (selectedSmart === name) return ' selected-smart';
+    return '';
+  }
+  function getSelTag(name) {
+    if (selectedFast  === name) return '⚡ rapide';
+    if (selectedSmart === name) return '🧠 smart';
+    return '';
+  }
+
+  function updateSummary() {
+    const df = document.getElementById('disp-fast');
+    const ds = document.getElementById('disp-smart');
+    if (selectedFast)  { df.textContent = selectedFast;  df.className = 'sel-val ok'; }
+    else               { df.textContent = 'Non sélectionné'; df.className = 'sel-val empty'; }
+    if (selectedSmart) { ds.textContent = selectedSmart; ds.className = 'sel-val ok'; }
+    else               { ds.textContent = 'Non sélectionné'; ds.className = 'sel-val empty'; }
+    // Update hidden inputs
+    document.getElementById('form-fast').value  = selectedFast;
+    document.getElementById('form-smart').value = selectedSmart;
+  }
+
+  /* ─── Helpers ───────────────────────────────────────── */
+  function showErr(msg) {
+    const b = document.getElementById('err-box');
+    b.style.display = 'block'; b.textContent = '❌ ' + msg;
+  }
+  function hideErr() { document.getElementById('err-box').style.display = 'none'; }
+  function escHtml(t) {
+    return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  /* ─── Init : si config existante, afficher save section ─── */
+  {% if cfg and cfg.model_fast %}
+  document.getElementById('save-section').style.display = 'block';
+  document.getElementById('form-url').value   = "{{ cfg.ollama_url or '' }}";
+  document.getElementById('form-fast').value  = "{{ cfg.model_fast or '' }}";
+  document.getElementById('form-smart').value = "{{ cfg.model_smart or '' }}";
+  {% endif %}
+</script>
+{% endblock %}

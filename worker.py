@@ -10,10 +10,11 @@ import logging
 import threading
 from datetime import datetime
 
-from models import db, BotSession, Position, NewsLog, BotActivity, PolyCredential
+from models import db, BotSession, Position, NewsLog, BotActivity, PolyCredential, OllamaConfig
 from engine.polymarket_client import PolyMarketClient, CATEGORIES
 from engine.news_engine import NewsEngine
-from engine.ai_analyst import batch_analyze, check_ai_available, AIUnavailableError
+from engine.ai_analyst import (batch_analyze, check_ai_available,
+                                AIUnavailableError, set_runtime_config)
 from engine.risk import get_size, expected_value, MAX_ACTIVE_POSITIONS
 from engine.circuit_breaker import CircuitBreaker
 
@@ -69,8 +70,24 @@ class MarketWorker(threading.Thread):
     # ── Boucle principale ─────────────────────────────────────────────────────
 
     def _loop(self):
-        # ── 1. Vérification IA (obligatoire) ─────────────────────────────────
-        self._log("info", "🤖", "Vérification des backends IA…")
+        # ── 1. Injection config Ollama depuis DB ──────────────────────────────
+        ollama_cfg = OllamaConfig.query.filter_by(user_id=self.user_id).first()
+        if ollama_cfg and ollama_cfg.ollama_url:
+            set_runtime_config(
+                url=ollama_cfg.ollama_url,
+                api_key=ollama_cfg.get_api_key(),
+                model_fast=ollama_cfg.model_fast or "",
+                model_smart=ollama_cfg.model_smart or "",
+            )
+            self._log("info", "⚙️",
+                      f"Config Ollama Cloud chargée : "
+                      f"fast={ollama_cfg.model_fast or 'défaut'} | "
+                      f"smart={ollama_cfg.model_smart or 'défaut'}")
+        else:
+            self._log("info", "⚙️", "Ollama Cloud : config env vars (pas de config DB)")
+
+        # ── 2. Vérification IA (obligatoire) ─────────────────────────────────
+        self._log("info", "🤖", "Vérification des backends IA cloud…")
         ai_status = check_ai_available()
         if not ai_status["ok"]:
             self._set_error(
@@ -87,7 +104,7 @@ class MarketWorker(threading.Thread):
         if ai_status["ollama"]:     ai_backends.append("Ollama Cloud 🌐")
         self._log("success", "🧠", f"IA cloud connectée : {' | '.join(ai_backends)}")
 
-        # ── 2. Credentials Polymarket ─────────────────────────────────────────
+        # ── 3. Credentials Polymarket ─────────────────────────────────────────
         cred = PolyCredential.query.filter_by(user_id=self.user_id).first()
         if not cred:
             self._set_error("Credentials Polymarket manquants")

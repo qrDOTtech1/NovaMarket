@@ -108,6 +108,46 @@ class Position(db.Model):
         }
 
 
+class OllamaConfig(db.Model):
+    """Configuration Ollama Cloud par utilisateur."""
+    __tablename__ = "ollama_configs"
+    id            = db.Column(db.Integer, primary_key=True)
+    user_id       = db.Column(db.Integer, db.ForeignKey("users.id"), unique=True, nullable=False)
+    ollama_url    = db.Column(db.Text, nullable=True)
+    _api_key      = db.Column("api_key", db.Text, nullable=True)
+    model_fast    = db.Column(db.String(100), nullable=True)   # classify + match
+    model_smart   = db.Column(db.String(100), nullable=True)   # estimate_prob
+    verified_at   = db.Column(db.DateTime, nullable=True)
+
+    user = db.relationship("User", backref=db.backref("ollama_config", uselist=False))
+
+    def set_api_key(self, key: str):
+        fernet_key = os.environ.get("FERNET_KEY", "")
+        if fernet_key and key:
+            from cryptography.fernet import Fernet
+            self._api_key = Fernet(fernet_key.encode()).encrypt(key.encode()).decode()
+        else:
+            self._api_key = key
+
+    def get_api_key(self) -> str:
+        fernet_key = os.environ.get("FERNET_KEY", "")
+        if fernet_key and self._api_key:
+            try:
+                from cryptography.fernet import Fernet
+                return Fernet(fernet_key.encode()).decrypt(self._api_key.encode()).decode()
+            except Exception:
+                pass
+        return self._api_key or ""
+
+    def to_dict(self):
+        return {
+            "ollama_url":  self.ollama_url,
+            "model_fast":  self.model_fast,
+            "model_smart": self.model_smart,
+            "verified_at": self.verified_at.isoformat() if self.verified_at else None,
+        }
+
+
 class NewsLog(db.Model):
     """Articles analysés récemment."""
     __tablename__ = "news_logs"

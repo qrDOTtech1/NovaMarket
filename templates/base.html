@@ -191,7 +191,8 @@
     </a>
     <div class="navbar-links">
       <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
-      <a href="{{ url_for('onboarding') }}">Wallet</a>
+      <a href="{{ url_for('onboarding') }}" class="{% if request.endpoint == 'onboarding' %}active{% endif %}">Wallet</a>
+      <a href="{{ url_for('settings_ollama') }}" class="{% if request.endpoint == 'settings_ollama' %}active{% endif %}">🤖 IA</a>
       <a href="{{ url_for('logout') }}">Déco</a>
     </div>
   </nav>
