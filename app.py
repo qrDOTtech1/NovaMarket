@@ -266,7 +266,7 @@ def _register_routes(app):
         db.session.add(s)
         db.session.commit()
 
-        launched = BotManager.start(app._get_current_object(), uid, s.id, simulate=simulate)
+        launched = BotManager.start(app, uid, s.id, simulate=simulate)
         if not launched:
             s.status = "error"; s.error_msg = "Échec démarrage thread"
             db.session.commit()
