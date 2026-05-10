@@ -112,7 +112,7 @@ class Article:
         self.title     = title
         self.summary   = summary
         self.url       = url
-        self.published = published or datetime.now(timezone.utcnow())
+        self.published = published or datetime.now(timezone.utc)
         self.uid       = hashlib.md5(url.encode()).hexdigest()
         self.score     = self._score()
         self.full_text = ""
