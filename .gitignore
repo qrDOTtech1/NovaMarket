@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Env
+.env
+.env.*
+*.env
+
+# DB locale
+*.db
+*.sqlite
+*.sqlite3
+
+# Migrations (Railway gère via Flask-Migrate)
+migrations/
+
+# Venv
+venv/
+.venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

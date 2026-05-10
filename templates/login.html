@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Connexion — NovaMarket{% endblock %}
+{% block extra_head %}
+<style>
+  .auth-wrap {
+    min-height: 85vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+  }
+  .auth-card {
+    width: 100%;
+    max-width: 420px;
+    background: var(--nova-surface);
+    border: 1px solid var(--nova-border);
+    border-radius: 14px;
+    padding: 2rem 1.75rem;
+  }
+  .auth-logo {
+    text-align: center;
+    font-size: 2rem;
+    margin-bottom: .5rem;
+  }
+  .auth-title {
+    text-align: center;
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: .25rem;
+  }
+  .auth-sub {
+    text-align: center;
+    color: var(--nova-muted);
+    font-size: .82rem;
+    margin-bottom: 1.75rem;
+  }
+  .auth-footer {
+    text-align: center;
+    color: var(--nova-muted);
+    font-size: .82rem;
+    margin-top: 1.25rem;
+  }
+  .auth-footer a { color: var(--nova-teal-l); text-decoration: none; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="auth-wrap">
+  <div class="auth-card">
+    <div class="auth-logo">🟢</div>
+    <div class="auth-title">NovaMarket</div>
+    <div class="auth-sub">Connecte-toi à ton bot Polymarket</div>
+
+    <form method="POST">
+      <div class="form-group">
+        <label class="form-label">Email ou pseudo</label>
+        <input class="form-control" type="text" name="identifier"
+               placeholder="user@example.com" autocomplete="username" required/>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Mot de passe</label>
+        <input class="form-control" type="password" name="password"
+               placeholder="••••••••" autocomplete="current-password" required/>
+      </div>
+      <button type="submit" class="btn btn-primary w-full mt-1">Se connecter</button>
+    </form>
+
+    <div class="auth-footer">
+      Pas encore de compte ?
+      <a href="{{ url_for('register') }}">Créer un compte</a>
+    </div>
+  </div>
+</div>
+{% endblock %}

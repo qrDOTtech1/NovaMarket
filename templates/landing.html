@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}NovaMarket — Bot Polymarket IA{% endblock %}
+{% block extra_head %}
+<style>
+  .hero {
+    min-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2rem 1rem;
+  }
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+    background: rgba(0,137,123,.15);
+    border: 1px solid rgba(0,137,123,.3);
+    color: var(--nova-teal-l);
+    font-size: .75rem;
+    font-weight: 600;
+    padding: .3rem .8rem;
+    border-radius: 20px;
+    margin-bottom: 1.5rem;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+  .hero-title {
+    font-size: clamp(1.8rem, 6vw, 3.2rem);
+    font-weight: 700;
+    line-height: 1.15;
+    margin-bottom: 1rem;
+  }
+  .hero-title .accent { color: var(--nova-teal-l); }
+  .hero-sub {
+    font-size: clamp(.9rem, 2.5vw, 1.1rem);
+    color: var(--nova-muted);
+    max-width: 560px;
+    line-height: 1.6;
+    margin-bottom: 2rem;
+  }
+  .hero-cta {
+    display: flex;
+    gap: .75rem;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .hero-cta .btn { font-size: 1rem; padding: .7rem 1.6rem; }
+
+  /* ── Stats strip ── */
+  .stats-strip {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 1rem;
+    padding: 1.5rem 1rem;
+    margin: 1.5rem 0;
+  }
+  .stat-box {
+    background: var(--nova-surface);
+    border: 1px solid var(--nova-border);
+    border-radius: var(--nova-radius);
+    padding: 1rem 1.5rem;
+    text-align: center;
+    min-width: 130px;
+  }
+  .stat-box .stat-val {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--nova-teal-l);
+  }
+  .stat-box .stat-lbl {
+    font-size: .72rem;
+    color: var(--nova-muted);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    margin-top: .2rem;
+  }
+
+  /* ── Features ── */
+  .features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 1rem;
+    padding: 1rem;
+    max-width: 900px;
+    margin: 0 auto 2rem;
+  }
+  .feature {
+    background: var(--nova-surface);
+    border: 1px solid var(--nova-border);
+    border-radius: var(--nova-radius);
+    padding: 1.25rem;
+  }
+  .feature-icon { font-size: 1.6rem; margin-bottom: .6rem; }
+  .feature-title { font-size: .95rem; font-weight: 600; margin-bottom: .4rem; }
+  .feature-desc { font-size: .82rem; color: var(--nova-muted); line-height: 1.5; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="hero">
+  <div class="hero-badge">🚀 Propulsé par l'IA — Polymarket</div>
+  <h1 class="hero-title">
+    Laisse l'IA trader<br>
+    <span class="accent">Polymarket</span> pour toi
+  </h1>
+  <p class="hero-sub">
+    NovaMarket analyse les actualités en temps réel, détecte les signaux
+    et exécute des positions sur les marchés de prédiction — 24h/24,
+    avec gestion du risque Kelly.
+  </p>
+  <div class="hero-cta">
+    <a href="{{ url_for('register') }}" class="btn btn-primary">Démarrer gratuitement</a>
+    <a href="{{ url_for('login') }}" class="btn btn-ghost">Se connecter</a>
+  </div>
+</div>
+
+<div class="stats-strip">
+  <div class="stat-box">
+    <div class="stat-val">24+</div>
+    <div class="stat-lbl">Sources RSS</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-val">3</div>
+    <div class="stat-lbl">Étapes IA</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-val">25%</div>
+    <div class="stat-lbl">Kelly fractionnel</div>
+  </div>
+  <div class="stat-box">
+    <div class="stat-val">60s</div>
+    <div class="stat-lbl">Cycle news</div>
+  </div>
+</div>
+
+<div class="features">
+  <div class="feature">
+    <div class="feature-icon">📰</div>
+    <div class="feature-title">Flux RSS constant</div>
+    <div class="feature-desc">Reuters, AP, BBC, CoinDesk, Politico, ESPN… 24 sources analysées toutes les 60 secondes.</div>
+  </div>
+  <div class="feature">
+    <div class="feature-icon">🤖</div>
+    <div class="feature-title">Pipeline IA 3 étapes</div>
+    <div class="feature-desc">Classify → Match marchés → Estimer probabilité. Powered by Ollama, edge minimum 10%.</div>
+  </div>
+  <div class="feature">
+    <div class="feature-icon">⚖️</div>
+    <div class="feature-title">Kelly Criterion</div>
+    <div class="feature-desc">Taille optimale par position, max 3% du bankroll, circuit breaker sur perte journalière -15%.</div>
+  </div>
+  <div class="feature">
+    <div class="feature-icon">🛡️</div>
+    <div class="feature-title">Circuit Breakers</div>
+    <div class="feature-desc">4 pertes consécutives → pause 30min. Daily loss -15% → arrêt automatique. Capital protégé.</div>
+  </div>
+  <div class="feature">
+    <div class="feature-icon">📊</div>
+    <div class="feature-title">Dashboard temps réel</div>
+    <div class="feature-desc">Positions ouvertes, PnL live, log d'activité, flux news — tout visible sur mobile.</div>
+  </div>
+  <div class="feature">
+    <div class="feature-icon">🔐</div>
+    <div class="feature-title">Clé chiffrée Fernet</div>
+    <div class="feature-desc">Ta clé privée Polygon est chiffrée en base. Jamais transmise en clair.</div>
+  </div>
+</div>
+{% endblock %}

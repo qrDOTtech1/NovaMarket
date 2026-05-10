@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>{% block title %}NovaMarket{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --nova-bg:        #0f1923;
+      --nova-surface:   #162230;
+      --nova-border:    #1e2f40;
+      --nova-teal:      #00897B;
+      --nova-teal-l:    #4DB6AC;
+      --nova-teal-dim:  rgba(0,137,123,.12);
+      --nova-gold:      #FFB300;
+      --nova-red:       #EF5350;
+      --nova-green:     #66BB6A;
+      --nova-text:      #e8edf2;
+      --nova-muted:     #7a96aa;
+      --nova-radius:    10px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { font-size: 15px; }
+    body {
+      background: var(--nova-bg);
+      color: var(--nova-text);
+      font-family: 'Inter', sans-serif;
+      min-height: 100vh;
+    }
+
+    /* ── Navbar ── */
+    .navbar {
+      background: var(--nova-surface);
+      border-bottom: 1px solid var(--nova-border);
+      padding: .75rem 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .navbar-brand {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--nova-teal-l);
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+    .navbar-brand span { font-size: 1.3rem; }
+    .navbar-links { display: flex; align-items: center; gap: .5rem; }
+    .navbar-links a {
+      color: var(--nova-muted);
+      text-decoration: none;
+      font-size: .85rem;
+      padding: .35rem .7rem;
+      border-radius: 6px;
+      transition: all .2s;
+    }
+    .navbar-links a:hover { color: var(--nova-teal-l); background: var(--nova-teal-dim); }
+    .navbar-links a.active { color: var(--nova-teal-l); }
+
+    /* ── Flashes ── */
+    .flash-container { padding: .5rem 1rem; }
+    .flash {
+      padding: .6rem 1rem;
+      border-radius: var(--nova-radius);
+      font-size: .85rem;
+      margin-bottom: .4rem;
+    }
+    .flash.error   { background: rgba(239,83,80,.15); color: #ef9a9a; border: 1px solid rgba(239,83,80,.3); }
+    .flash.success { background: rgba(102,187,106,.12); color: #a5d6a7; border: 1px solid rgba(102,187,106,.25); }
+    .flash.info    { background: var(--nova-teal-dim); color: var(--nova-teal-l); border: 1px solid rgba(0,137,123,.25); }
+
+    /* ── Containers ── */
+    .container { max-width: 1100px; margin: 0 auto; padding: 1rem; }
+    .container-sm { max-width: 480px; margin: 0 auto; padding: 1rem; }
+
+    /* ── Cards ── */
+    .card {
+      background: var(--nova-surface);
+      border: 1px solid var(--nova-border);
+      border-radius: var(--nova-radius);
+      padding: 1rem;
+    }
+    .card-title {
+      font-size: .75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--nova-muted);
+      margin-bottom: .75rem;
+    }
+
+    /* ── Buttons ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      padding: .55rem 1.1rem;
+      border-radius: 7px;
+      font-size: .875rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all .2s;
+      text-decoration: none;
+    }
+    .btn-primary   { background: var(--nova-teal); color: #fff; }
+    .btn-primary:hover { background: #00796B; }
+    .btn-danger    { background: var(--nova-red); color: #fff; }
+    .btn-danger:hover { background: #c62828; }
+    .btn-ghost {
+      background: transparent;
+      color: var(--nova-muted);
+      border: 1px solid var(--nova-border);
+    }
+    .btn-ghost:hover { color: var(--nova-text); border-color: var(--nova-muted); }
+    .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* ── Inputs ── */
+    .form-group { margin-bottom: 1rem; }
+    .form-label { display: block; font-size: .8rem; color: var(--nova-muted); margin-bottom: .35rem; font-weight: 500; }
+    .form-control {
+      width: 100%;
+      background: var(--nova-bg);
+      border: 1px solid var(--nova-border);
+      border-radius: 7px;
+      padding: .6rem .9rem;
+      color: var(--nova-text);
+      font-size: .9rem;
+      font-family: inherit;
+      transition: border-color .2s;
+    }
+    .form-control:focus { outline: none; border-color: var(--nova-teal); }
+
+    /* ── Badges ── */
+    .badge {
+      display: inline-block;
+      padding: .2rem .55rem;
+      border-radius: 20px;
+      font-size: .72rem;
+      font-weight: 600;
+    }
+    .badge-green  { background: rgba(102,187,106,.15); color: #a5d6a7; }
+    .badge-red    { background: rgba(239,83,80,.15);   color: #ef9a9a; }
+    .badge-gold   { background: rgba(255,179,0,.15);   color: #ffe082; }
+    .badge-teal   { background: var(--nova-teal-dim);  color: var(--nova-teal-l); }
+    .badge-muted  { background: rgba(122,150,170,.1);  color: var(--nova-muted); }
+
+    /* ── Utilities ── */
+    .text-teal   { color: var(--nova-teal-l); }
+    .text-muted  { color: var(--nova-muted); }
+    .text-green  { color: var(--nova-green); }
+    .text-red    { color: var(--nova-red); }
+    .text-gold   { color: var(--nova-gold); }
+    .text-center { text-align: center; }
+    .mt-1 { margin-top: .5rem; }
+    .mt-2 { margin-top: 1rem; }
+    .mt-3 { margin-top: 1.5rem; }
+    .mb-1 { margin-bottom: .5rem; }
+    .mb-2 { margin-bottom: 1rem; }
+    .flex { display: flex; }
+    .flex-center { display: flex; align-items: center; justify-content: center; }
+    .gap-1 { gap: .5rem; }
+    .gap-2 { gap: 1rem; }
+    .w-full { width: 100%; }
+
+    /* ── Footer ── */
+    .nova-footer {
+      text-align: center;
+      color: var(--nova-muted);
+      font-size: .75rem;
+      padding: 1.5rem 1rem;
+      border-top: 1px solid var(--nova-border);
+      margin-top: 2rem;
+    }
+    .nova-footer a { color: var(--nova-teal-l); text-decoration: none; }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  {% if 'user_id' in session %}
+  <nav class="navbar">
+    <a href="{{ url_for('dashboard') }}" class="navbar-brand">
+      <span>🟢</span> NovaMarket
+    </a>
+    <div class="navbar-links">
+      <a href="{{ url_for('dashboard') }}" class="{% if request.endpoint == 'dashboard' %}active{% endif %}">Dashboard</a>
+      <a href="{{ url_for('onboarding') }}">Wallet</a>
+      <a href="{{ url_for('logout') }}">Déco</a>
+    </div>
+  </nav>
+  {% endif %}
+
+  <div class="flash-container">
+    {% for cat, msg in get_flashed_messages(with_categories=true) %}
+    <div class="flash {{ cat }}">{{ msg }}</div>
+    {% endfor %}
+  </div>
+
+  {% block content %}{% endblock %}
+
+  <footer class="nova-footer">
+    NovaMarket &mdash; <a href="https://novavivo.online" target="_blank">NovaTech System</a>
+  </footer>
+</body>
+</html>

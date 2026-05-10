@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}Configuration Wallet — NovaMarket{% endblock %}
+{% block extra_head %}
+<style>
+  .onboard-wrap {
+    max-width: 560px;
+    margin: 2rem auto;
+    padding: 0 1rem;
+  }
+  .onboard-title {
+    font-size: 1.4rem;
+    font-weight: 700;
+    margin-bottom: .4rem;
+  }
+  .onboard-sub {
+    color: var(--nova-muted);
+    font-size: .85rem;
+    margin-bottom: 1.5rem;
+    line-height: 1.5;
+  }
+  /* Steps */
+  .steps {
+    display: flex;
+    gap: .5rem;
+    margin-bottom: 1.75rem;
+    flex-wrap: wrap;
+  }
+  .step {
+    flex: 1;
+    min-width: 120px;
+    background: var(--nova-surface);
+    border: 1px solid var(--nova-border);
+    border-radius: 8px;
+    padding: .75rem;
+  }
+  .step.active { border-color: var(--nova-teal); }
+  .step-num {
+    font-size: .7rem;
+    font-weight: 700;
+    color: var(--nova-muted);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+  .step.active .step-num { color: var(--nova-teal-l); }
+  .step-label { font-size: .8rem; font-weight: 600; margin-top: .2rem; }
+
+  /* Form card */
+  .form-card {
+    background: var(--nova-surface);
+    border: 1px solid var(--nova-border);
+    border-radius: var(--nova-radius);
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+  }
+  .key-input-wrap { position: relative; }
+  .key-input-wrap .form-control { padding-right: 3rem; font-family: monospace; font-size: .82rem; }
+  .key-toggle {
+    position: absolute;
+    right: .75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--nova-muted);
+    font-size: 1rem;
+    padding: 0;
+  }
+
+  /* Info boxes */
+  .info-box {
+    background: var(--nova-teal-dim);
+    border: 1px solid rgba(0,137,123,.25);
+    border-radius: 8px;
+    padding: 1rem;
+    font-size: .82rem;
+    color: var(--nova-teal-l);
+    line-height: 1.6;
+    margin-bottom: 1rem;
+  }
+  .info-box h4 { font-size: .8rem; font-weight: 700; margin-bottom: .4rem; }
+  .warn-box {
+    background: rgba(255,179,0,.08);
+    border: 1px solid rgba(255,179,0,.2);
+    border-radius: 8px;
+    padding: 1rem;
+    font-size: .82rem;
+    color: var(--nova-gold);
+    margin-bottom: 1rem;
+    line-height: 1.5;
+  }
+
+  /* Current wallet */
+  .wallet-status {
+    display: flex;
+    align-items: center;
+    gap: .75rem;
+    background: rgba(102,187,106,.08);
+    border: 1px solid rgba(102,187,106,.2);
+    border-radius: 8px;
+    padding: .85rem 1rem;
+    margin-bottom: 1.25rem;
+  }
+  .wallet-icon { font-size: 1.5rem; }
+  .wallet-addr { font-size: .78rem; font-family: monospace; color: var(--nova-muted); word-break: break-all; }
+  .wallet-label { font-size: .85rem; font-weight: 600; color: var(--nova-green); }
+</style>
+{% endblock %}
+{% block content %}
+<div class="onboard-wrap">
+  <div class="onboard-title">🔑 Configuration Wallet</div>
+  <div class="onboard-sub">
+    Connecte ton wallet Polygon pour accéder aux marchés Polymarket.
+    Ta clé est chiffrée en base — jamais transmise en clair.
+  </div>
+
+  <!-- Steps -->
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">Étape 1</div>
+      <div class="step-label">Créer un wallet</div>
+    </div>
+    <div class="step">
+      <div class="step-num">Étape 2</div>
+      <div class="step-label">Déposer USDC</div>
+    </div>
+    <div class="step active">
+      <div class="step-num">Étape 3</div>
+      <div class="step-label">Connecter ici</div>
+    </div>
+  </div>
+
+  {% if cred and cred.verified_at %}
+  <!-- Wallet déjà connecté -->
+  <div class="wallet-status">
+    <div class="wallet-icon">✅</div>
+    <div>
+      <div class="wallet-label">Wallet connecté</div>
+      <div class="wallet-addr">{{ cred.wallet_addr or 'Adresse non disponible' }}</div>
+    </div>
+  </div>
+  <a href="{{ url_for('dashboard') }}" class="btn btn-primary w-full mb-2">← Retour au dashboard</a>
+  <hr style="border-color: var(--nova-border); margin: 1.25rem 0;"/>
+  <p style="font-size: .82rem; color: var(--nova-muted); margin-bottom: 1rem;">
+    Mettre à jour la clé privée :
+  </p>
+  {% endif %}
+
+  <!-- Info -->
+  <div class="info-box">
+    <h4>📋 Comment récupérer ta clé privée Polygon ?</h4>
+    1. Ouvre MetaMask / Rabby / Trust Wallet<br/>
+    2. Va dans Paramètres → Sécurité → Exporter la clé privée<br/>
+    3. Copie la clé (format <code>0x…</code> ou sans préfixe)<br/>
+    4. Assure-toi d'avoir du USDC sur Polygon (réseau Polygon ≠ ETH mainnet)
+  </div>
+
+  <div class="warn-box">
+    ⚠️ <strong>Ne partage jamais ta clé privée</strong> avec un service non fiable.
+    NovaMarket chiffre ta clé avec Fernet (AES-128) — seul toi peux la voir.
+    Recommandé : utilise un <strong>wallet dédié</strong> avec uniquement les fonds à trader.
+  </div>
+
+  <!-- Form -->
+  <div class="form-card">
+    <form method="POST" id="onboard-form">
+      <div class="form-group">
+        <label class="form-label">Clé privée Polygon</label>
+        <div class="key-input-wrap">
+          <input class="form-control" type="password" name="private_key"
+                 id="pk-input" placeholder="0x… ou clé hex brute"
+                 autocomplete="off" required/>
+          <button type="button" class="key-toggle" onclick="togglePk()" title="Afficher/masquer">👁</button>
+        </div>
+      </div>
+      <button type="submit" class="btn btn-primary w-full" id="submit-btn">
+        <span id="btn-text">Connecter le wallet</span>
+      </button>
+    </form>
+  </div>
+
+  <p style="font-size: .72rem; color: var(--nova-muted); text-align: center; line-height: 1.5;">
+    La connexion teste ta clé contre l'API Polymarket.<br/>
+    Un solde USDC sur Polygon est nécessaire pour trader.
+  </p>
+</div>
+
+<script>
+  function togglePk() {
+    const inp = document.getElementById('pk-input');
+    inp.type = inp.type === 'password' ? 'text' : 'password';
+  }
+  document.getElementById('onboard-form').addEventListener('submit', function() {
+    const btn = document.getElementById('submit-btn');
+    btn.disabled = true;
+    document.getElementById('btn-text').textContent = 'Connexion en cours…';
+  });
+</script>
+{% endblock %}
