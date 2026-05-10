@@ -18,9 +18,10 @@ try:
     from py_clob_client.clob_types import OrderArgs, OrderType
     from py_clob_client.constants import BUY, SELL
     CLOB_OK = True
-except ImportError:
+    logger.info("py-clob-client chargé ✅")
+except Exception as _clob_err:
     CLOB_OK = False
-    logger.warning("py-clob-client non installé")
+    logger.warning(f"py-clob-client indisponible : {_clob_err}")
 
 
 # ── Catégories Polymarket — TOUTES exploitées ────────────────────────────────
@@ -69,7 +70,7 @@ class PolyMarketClient:
 
     def connect(self) -> dict:
         if not CLOB_OK:
-            return {"ok": False, "error": "py-clob-client non installé"}
+            return {"ok": False, "error": "py-clob-client indisponible (voir logs Railway)"}
         try:
             self._client = ClobClient(
                 CLOB_API,
