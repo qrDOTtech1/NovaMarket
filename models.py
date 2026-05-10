@@ -33,14 +33,17 @@ class PolyCredential(db.Model):
     def set_key(self, key: str):
         fernet_key = os.environ.get("FERNET_KEY", "")
         if fernet_key:
-            from cryptography.fernet import Fernet
-            self.private_key = Fernet(fernet_key.encode()).encrypt(key.encode()).decode()
-        else:
-            self.private_key = key
+            try:
+                from cryptography.fernet import Fernet
+                self.private_key = Fernet(fernet_key.encode()).encrypt(key.encode()).decode()
+                return
+            except Exception:
+                pass  # clé Fernet invalide → stockage en clair
+        self.private_key = key
 
     def get_key(self) -> str:
         fernet_key = os.environ.get("FERNET_KEY", "")
-        if fernet_key and not self.private_key.startswith("0x"):
+        if fernet_key and self.private_key and not self.private_key.startswith("0x"):
             try:
                 from cryptography.fernet import Fernet
                 return Fernet(fernet_key.encode()).decrypt(self.private_key.encode()).decode()
@@ -136,10 +139,13 @@ class OllamaConfig(db.Model):
     def set_api_key(self, key: str):
         fernet_key = os.environ.get("FERNET_KEY", "")
         if fernet_key and key:
-            from cryptography.fernet import Fernet
-            self._api_key = Fernet(fernet_key.encode()).encrypt(key.encode()).decode()
-        else:
-            self._api_key = key
+            try:
+                from cryptography.fernet import Fernet
+                self._api_key = Fernet(fernet_key.encode()).encrypt(key.encode()).decode()
+                return
+            except Exception:
+                pass  # clé Fernet invalide → stockage en clair
+        self._api_key = key
 
     def get_api_key(self) -> str:
         fernet_key = os.environ.get("FERNET_KEY", "")
