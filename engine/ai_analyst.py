@@ -246,6 +246,21 @@ def _parse_json(raw: str) -> Optional[dict]:
         return None
 
 
+def _market_key(market: dict) -> str:
+    """
+    Clé de déduplication GARANTIE non-vide.
+    Priorité : conditionId → question normalisée.
+    Utilisée pour _analyzed_this_session, estimated_this_batch, blocked_market_ids.
+    """
+    mid = market.get("conditionId", market.get("condition_id", ""))
+    if isinstance(mid, str):
+        mid = mid.strip()
+    if mid:
+        return mid
+    q = market.get("question", market.get("title", ""))
+    return "q:" + str(q)[:100].lower().strip()
+
+
 # ── Health check ──────────────────────────────────────────────────────────────
 
 def check_ai_available() -> dict:
@@ -439,15 +454,17 @@ def batch_analyze(articles: list, markets: list,
 
         # 3. Estimation probabilité via Perplexity (web search)
         for market in relevant:
-            mid = market.get("conditionId", market.get("condition_id", ""))
+            mid  = market.get("conditionId", market.get("condition_id", ""))
+            mkey = _market_key(market)   # TOUJOURS non-vide (fallback sur question)
             current_prob = market.get("_yes_price", 0.5)
             question     = market.get("question", market.get("title", ""))
 
             # ── BLOC RADICAL : skip si marché déjà ouvert OU déjà analysé ──
-            if mid and mid in blocked_market_ids:
+            # Note : on vérifie mkey (toujours non-vide) ET mid (si disponible)
+            if mkey in blocked_market_ids or (mid and mid in blocked_market_ids):
                 logger.debug(f"[AI] Marché bloqué (déjà ouvert/analysé): {question[:60]}…")
                 continue
-            if mid and mid in estimated_this_batch:
+            if mkey in estimated_this_batch or (mid and mid in estimated_this_batch):
                 logger.debug(f"[AI] Marché déjà estimé ce batch: {question[:60]}…")
                 continue
 
@@ -474,9 +491,12 @@ def batch_analyze(articles: list, markets: list,
                 analysis["confidence"] = max(0, min(100, analysis["confidence"]))
 
             # Marquer dans les deux sets — plus jamais appelé (signal ou non)
-            if mid:
+            # mkey est TOUJOURS non-vide → garantit le blocage même si conditionId vide
+            estimated_this_batch.add(mkey)
+            blocked_market_ids.add(mkey)
+            if mid:  # double-indexation par conditionId si disponible
                 estimated_this_batch.add(mid)
-                blocked_market_ids.add(mid)  # met à jour le set mutable du caller
+                blocked_market_ids.add(mid)
 
             estimated = analysis["estimated_prob"]
             edge      = abs(estimated - current_prob)
@@ -517,15 +537,15 @@ def batch_analyze(articles: list, markets: list,
                 f"edge={edge:.0%} conf={conf}%"
             )
 
-    # ── Déduplication : UN SEUL signal par market_id ────────────────────────
+    # ── Déduplication : UN SEUL signal par marché ───────────────────────────
     # Plusieurs articles peuvent pointer vers le même marché → on garde le meilleur
     best_per_market: dict[str, dict] = {}
     for c in candidates:
-        mid = c["market"].get("conditionId", c["market"].get("condition_id", ""))
+        mkey = _market_key(c["market"])   # clé garantie non-vide
         score = c["edge"] * c["confidence"]
-        if mid not in best_per_market or score > best_per_market[mid]["_score"]:
+        if mkey not in best_per_market or score > best_per_market[mkey]["_score"]:
             c["_score"] = score
-            best_per_market[mid] = c
+            best_per_market[mkey] = c
 
     deduped = list(best_per_market.values())
     for c in deduped:

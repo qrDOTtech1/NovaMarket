@@ -14,7 +14,9 @@ from models import db, BotSession, Position, NewsLog, BotActivity, PolyCredentia
 from engine.polymarket_client import PolyMarketClient, CATEGORIES
 from engine.news_engine import NewsEngine
 from engine.ai_analyst import (batch_analyze, check_ai_available,
-                                AIUnavailableError, set_runtime_config)
+                                AIUnavailableError, set_runtime_config,
+                                _market_key)
+from engine.market_tracker import MarketTracker
 from engine.risk import get_size, expected_value, roi_if_win, MAX_ACTIVE_POSITIONS
 from engine.circuit_breaker import CircuitBreaker
 
@@ -45,8 +47,12 @@ class MarketWorker(threading.Thread):
         self._last_news_refresh        = 0.0
         self._last_pos_check           = 0.0
         self._last_market_signal_cycle = 0.0
-        # Marchés analysés cette session (market_id) — jamais retestés par Perplexity
+        # Marchés analysés cette session — set in-memory + CSV persistant
         self._analyzed_this_session: set = set()
+        # Tracker CSV : persiste entre redémarrages du worker (même container Railway)
+        self._tracker = MarketTracker(user_id=user_id)
+        # Pré-charger les marchés déjà analysés (TTL 12h) dans le set session
+        self._tracker.load_into_set(self._analyzed_this_session)
 
     def stop(self):
         self._stop.set()
@@ -237,10 +243,13 @@ class MarketWorker(threading.Thread):
         # ── Marchés BLOQUÉS : positions ouvertes + déjà analysés ────────────
         open_positions = Position.query.filter_by(
             user_id=self.user_id, result="OPEN"
-        ).with_entities(Position.market_id).all()
-        for row in open_positions:
-            if row[0]:
-                self._analyzed_this_session.add(row[0])
+        ).with_entities(Position.market_id, Position.market_question).all()
+        for market_id_row, question_row in open_positions:
+            if market_id_row:
+                self._analyzed_this_session.add(market_id_row)
+            if question_row:
+                # Clé question en fallback — même format que _market_key()
+                self._analyzed_this_session.add("q:" + str(question_row)[:100].lower().strip())
 
         n_blocked = len(self._analyzed_this_session)
         if n_blocked:
@@ -252,6 +261,8 @@ class MarketWorker(threading.Thread):
 
         # On passe _analyzed_this_session directement — batch_analyze le remplit
         # avec TOUS les marchés estimés (signal ou non), bloquant les futurs cycles
+        # Snapshot avant pour calculer le diff après → marquer dans le CSV
+        snapshot_before = set(self._analyzed_this_session)
         try:
             signals = batch_analyze(articles, self._markets,
                                     blocked_market_ids=self._analyzed_this_session)
@@ -260,6 +271,44 @@ class MarketWorker(threading.Thread):
                       f"IA indisponible en cours de session : {e} — "
                       "cycle ignoré, prochain essai dans 60s")
             return
+
+        # Marchés nouvellement analysés dans ce batch → écrire dans le CSV
+        newly_analyzed_keys = self._analyzed_this_session - snapshot_before
+        if newly_analyzed_keys:
+            # Construire un index market_key → market pour retrouver les infos
+            market_by_key: dict = {}
+            for m in self._markets:
+                k = _market_key(m)
+                market_by_key[k] = m
+                mid_tmp = m.get("conditionId", m.get("condition_id", ""))
+                if mid_tmp:
+                    market_by_key[mid_tmp] = m
+
+            # Signal généré ? lookup rapide par question
+            signal_questions = {s["market"].get("question", s["market"].get("title", ""))
+                                 for s in signals}
+
+            for nkey in newly_analyzed_keys:
+                m = market_by_key.get(nkey)
+                if not m:
+                    continue
+                q   = m.get("question", m.get("title", ""))
+                mid = m.get("conditionId", m.get("condition_id", ""))
+                has_sig = q in signal_questions
+                # Récupérer edge/conf du signal si existant
+                sig_info = next(
+                    (s for s in signals
+                     if s["market"].get("question", s["market"].get("title", "")) == q),
+                    None
+                )
+                self._tracker.mark(
+                    nkey, mid, q,
+                    signal=has_sig,
+                    edge=sig_info["edge"] if sig_info else 0.0,
+                    confidence=sig_info["confidence"] if sig_info else 0,
+                    side=sig_info["side"] if sig_info else "",
+                    source=sig_info.get("article_source", "") if sig_info else "",
+                )
 
         # Log articles dans la DB
         for art in articles:
@@ -313,10 +362,10 @@ class MarketWorker(threading.Thread):
             return
 
         # Marchés non encore analysés cette session
+        # _market_key() garantit une clé non-vide même si conditionId est absent/vide
         unanalyzed = [
             m for m in self._markets
-            if m.get("conditionId", m.get("condition_id", ""))
-               not in self._analyzed_this_session
+            if _market_key(m) not in self._analyzed_this_session
         ]
         if not unanalyzed:
             self._log("info", "✅", "Tous les marchés déjà analysés cette session")
@@ -333,6 +382,7 @@ class MarketWorker(threading.Thread):
         signals = []
         for market in unanalyzed[:20]:   # max 20 marchés par cycle
             mid      = market.get("conditionId", market.get("condition_id", ""))
+            mkey     = _market_key(market)   # clé garantie non-vide
             question = market.get("question", market.get("title", ""))
             current_prob = market.get("_yes_price", 0.5)
 
@@ -353,7 +403,8 @@ class MarketWorker(threading.Thread):
                 art_summary = f"Marché Polymarket actif : {question}"
                 art_source  = "polymarket"
 
-            # Bloquer ce marché dès maintenant (qu'on génère un signal ou non)
+            # Bloquer ce marché AVANT l'appel IA — garantit le blocage même si conditionId vide
+            self._analyzed_this_session.add(mkey)
             if mid:
                 self._analyzed_this_session.add(mid)
 
@@ -361,9 +412,12 @@ class MarketWorker(threading.Thread):
                 analysis = estimate_probability(art_title, art_summary, question, current_prob)
             except AIUnavailableError as e:
                 self._log("error", "🚫", f"IA indisponible: {e}")
+                # Marquer quand même pour éviter reboucle immédiate
+                self._tracker.mark(mkey, mid, question, signal=False, source=art_source)
                 break
             except Exception as e:
                 logger.warning(f"[NM] market_signal_cycle estimate error: {e}")
+                self._tracker.mark(mkey, mid, question, signal=False, source=art_source)
                 continue
 
             estimated = analysis["estimated_prob"]
@@ -375,7 +429,19 @@ class MarketWorker(threading.Thread):
                       f"edge={edge:.0%} conf={conf}%"
                       + (f" | news: {art_source}" if art_source != "polymarket" else ""))
 
-            if edge < 0.12 or conf < 60:
+            # Enregistrer dans le CSV — signal ou non
+            has_signal = edge >= 0.12 and conf >= 60
+            side_candidate = "YES" if estimated > current_prob else "NO"
+            self._tracker.mark(
+                mkey, mid, question,
+                signal=has_signal,
+                edge=round(edge, 4),
+                confidence=conf,
+                side=side_candidate if has_signal else "",
+                source=art_source,
+            )
+
+            if not has_signal:
                 continue
 
             side       = "YES" if estimated > current_prob else "NO"
@@ -425,9 +491,16 @@ class MarketWorker(threading.Thread):
         conf     = sig["confidence"]
 
         # ── VÉRIF : UNE SEULE position OPEN par marché ───────────────────────
-        existing = Position.query.filter_by(
-            user_id=self.user_id, market_id=market_id, result="OPEN"
-        ).first()
+        # Si market_id disponible : check par conditionId
+        # Sinon : check par question (évite doublons même si conditionId vide)
+        if market_id:
+            existing = Position.query.filter_by(
+                user_id=self.user_id, market_id=market_id, result="OPEN"
+            ).first()
+        else:
+            existing = Position.query.filter_by(
+                user_id=self.user_id, market_question=question, result="OPEN"
+            ).first()
         if existing:
             self._log("info", "🔁",
                       f"Position déjà ouverte sur [{question[:50]}…] — signal ignoré")

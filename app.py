@@ -532,10 +532,15 @@ def _register_routes(app):
                         f"{old_size:.1f}$→{new_size:.1f}$ conf={conf}% edge={edge:.0%}"
                     )
 
-                    # Ajouter au set bloqué du worker si actif
+                    # Ajouter au set bloqué du worker si actif (par market_id ET question)
                     worker = BotManager._workers.get(uid)
-                    if worker and pos.market_id:
-                        worker._analyzed_this_session.add(pos.market_id)
+                    if worker:
+                        if pos.market_id:
+                            worker._analyzed_this_session.add(pos.market_id)
+                        if pos.market_question:
+                            worker._analyzed_this_session.add(
+                                "q:" + str(pos.market_question)[:100].lower().strip()
+                            )
 
             except AIUnavailableError as e:
                 results["errors"].append(f"IA indisponible: {str(e)[:60]}")
@@ -697,6 +702,10 @@ def _register_routes(app):
         articles_count = NewsLog.query.filter_by(user_id=uid).count()
         positions_count = Position.query.filter_by(user_id=uid, result="OPEN").count()
 
+        # Tracker CSV stats
+        worker = BotManager._workers.get(uid)
+        tracker_stats = worker._tracker.stats() if worker else {}
+
         return jsonify({
             "user_id": uid,
             "bot_running": BotManager.is_running(uid),
@@ -705,6 +714,112 @@ def _register_routes(app):
             "open_positions": positions_count,
             "ai_status": check_ai_available(),
             "markets_cached": len(MARKETS_CACHE.get(uid, [])),
+            "tracker": tracker_stats,
+        })
+
+    @app.route("/api/markets/tracker")
+    @login_required
+    def api_markets_tracker():
+        """
+        Retourne les marchés analysés (JSON) pour affichage dans le dashboard.
+        Tri : plus récents en premier.
+        """
+        import csv as csv_mod, os
+        from engine.market_tracker import MarketTracker, _DEFAULT_DATA_DIR
+        from pathlib import Path
+        uid = session["user_id"]
+
+        csv_path = Path(_DEFAULT_DATA_DIR) / f"markets_u{uid}.csv"
+        if not csv_path.exists():
+            return jsonify({"rows": [], "stats": {"total": 0, "with_signal": 0}})
+
+        rows = []
+        try:
+            with open(csv_path, newline="", encoding="utf-8") as f:
+                reader = csv_mod.DictReader(f)
+                for row in reader:
+                    rows.append({
+                        "market_key":  row.get("market_key", ""),
+                        "question":    row.get("question", "")[:140],
+                        "analyzed_at": row.get("analyzed_at", ""),
+                        "signal":      row.get("signal", "NO"),
+                        "edge":        float(row.get("edge", 0) or 0),
+                        "confidence":  int(row.get("confidence", 0) or 0),
+                        "side":        row.get("side", ""),
+                        "source":      row.get("source", ""),
+                    })
+        except Exception as e:
+            return jsonify({"rows": [], "stats": {}, "error": str(e)})
+
+        # Trier par analyzed_at décroissant
+        rows.sort(key=lambda r: r["analyzed_at"], reverse=True)
+        with_signal = sum(1 for r in rows if r["signal"] == "YES")
+        return jsonify({
+            "rows":  rows[:200],  # max 200 lignes côté UI
+            "stats": {
+                "total":       len(rows),
+                "with_signal": with_signal,
+                "no_signal":   len(rows) - with_signal,
+            },
+        })
+
+    @app.route("/api/markets/tracker/csv")
+    @login_required
+    def api_markets_tracker_csv():
+        """
+        Télécharger le CSV des marchés analysés.
+        Retourne le fichier CSV ou un JSON d'erreur si le tracker n'est pas dispo.
+        """
+        from flask import send_file
+        uid = session["user_id"]
+        worker = BotManager._workers.get(uid)
+        if not worker:
+            # Bot stoppé — créer un tracker temporaire pour lire le CSV existant
+            from engine.market_tracker import MarketTracker
+            tmp_tracker = MarketTracker(user_id=uid)
+            csv_path = tmp_tracker.export_csv_path()
+        else:
+            csv_path = worker._tracker.export_csv_path()
+
+        import os
+        if not os.path.exists(csv_path):
+            return jsonify({"error": "Aucun CSV disponible — démarrez le bot d'abord"}), 404
+
+        return send_file(
+            csv_path,
+            mimetype="text/csv",
+            as_attachment=True,
+            download_name=f"novamarket_markets_u{uid}.csv",
+        )
+
+    @app.route("/api/markets/tracker/reset", methods=["POST"])
+    @login_required
+    def api_markets_tracker_reset():
+        """
+        Remet à zéro le CSV des marchés analysés.
+        Utile pour forcer une ré-analyse complète (ex: après un long arrêt).
+        """
+        import os
+        from engine.market_tracker import MarketTracker, _DEFAULT_DATA_DIR
+        from pathlib import Path
+        uid = session["user_id"]
+        csv_path = Path(_DEFAULT_DATA_DIR) / f"markets_u{uid}.csv"
+        deleted = False
+        if csv_path.exists():
+            csv_path.unlink()
+            deleted = True
+
+        # Vider aussi le set en mémoire si worker actif
+        worker = BotManager._workers.get(uid)
+        if worker:
+            worker._analyzed_this_session.clear()
+            worker._tracker._analyzed.clear()
+            worker._tracker._rows.clear()
+
+        return jsonify({
+            "ok": True,
+            "deleted": deleted,
+            "message": "Tracker réinitialisé — tous les marchés seront ré-analysés",
         })
 
     # ── Healthcheck Railway ───────────────────────────────────────────────────
