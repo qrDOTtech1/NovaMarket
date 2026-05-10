@@ -16,7 +16,15 @@ CHAIN_ID   = 137   # Polygon mainnet
 try:
     from py_clob_client.client import ClobClient
     from py_clob_client.clob_types import OrderArgs, OrderType
-    from py_clob_client.constants import BUY, SELL
+    # BUY/SELL ont changé de place selon la version du package
+    try:
+        from py_clob_client.constants import BUY, SELL
+    except ImportError:
+        try:
+            from py_clob_client.clob_types import BUY, SELL
+        except ImportError:
+            BUY = "BUY"   # fallback string — l'API accepte les deux
+            SELL = "SELL"
     CLOB_OK = True
     logger.info("py-clob-client chargé ✅")
 except Exception as _clob_err:
