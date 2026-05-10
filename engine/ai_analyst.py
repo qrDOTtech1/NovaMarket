@@ -289,12 +289,15 @@ def classify_article(title: str, summary: str) -> dict:
     Lève AIUnavailableError si IA indisponible.
     """
     prompt = (
-        "Classifie cet article pour les marchés de prédiction (Polymarket).\n"
+        "Classifie cet article pour les marchés de prédiction Polymarket.\n"
         f"Titre: {title[:200]}\nRésumé: {summary[:300]}\n\n"
         "Retourne UNIQUEMENT ce JSON (rien d'autre):\n"
         '{"category":"politics","keywords":["mot1","mot2"],"relevance":7}\n'
-        "category: politics | crypto | sports | business | science | entertainment\n"
-        "relevance: 0=hors-sujet, 10=directement pertinent pour un marché de prédiction"
+        "category: politics | elections | crypto | economics | business | "
+        "sports | nfl | nba | soccer | mma | world | science | tech | health | "
+        "pop culture | entertainment | trump\n"
+        "relevance: 0=hors-sujet, 10=directement pertinent pour un marché de prédiction\n"
+        "IMPORTANT: marchés originaux (célébrités, box-office, reality TV, people) = pop culture"
     )
     raw    = _call_fast(prompt, max_tokens=120)
     result = _parse_json(raw)

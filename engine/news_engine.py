@@ -53,29 +53,53 @@ RSS_FEEDS = {
     # ── Sports ───────────────────────────────────────────────────────────────
     "cbs_sports":     "https://www.cbssports.com/rss/headlines/",          # ✅ 36 art
     "sporting_news":  "https://www.sportingnews.com/us/rss",               # ✅ 20 art
+
+    # ── Pop culture / Entertainment (marchés originaux Polymarket) ───────────
+    "variety":        "https://variety.com/feed/",                         # films/célébrités
+    "tmz":            "https://www.tmz.com/rss.xml",                       # people/célébrités
+    "deadline":       "https://deadline.com/feed/",                        # box-office/TV
+    "techcrunch":     "https://techcrunch.com/feed/",                      # tech/startups
 }
 
-# Mots-clés Polymarket — augmentent le score de pertinence d'un article
+# Mots-clés Polymarket — couvrent TOUTES les catégories du site
 POLYMARKET_KEYWORDS = [
-    # Politique
+    # ── Politique US & Monde ──────────────────────────────────────────────────
     "election", "president", "congress", "senate", "vote", "poll", "approval",
-    "democrat", "republican", "biden", "trump", "harris", "white house",
-    "referendum", "parliament", "government", "minister",
-    # Crypto
-    "bitcoin", "ethereum", "crypto", "btc", "eth", "sec", "etf", "halving",
-    "regulation", "stablecoin", "blockchain", "defi", "nft",
-    # Finance / Macro
-    "fed", "interest rate", "inflation", "gdp", "recession", "market",
-    "earnings", "ipo", "merger", "acquisition", "bankruptcy",
-    # Géopolitique
-    "war", "conflict", "ceasefire", "sanctions", "nato", "un ", "treaty",
-    "invasion", "attack", "military",
-    # Science / Tech
-    "ai", "artificial intelligence", "openai", "google", "microsoft", "apple",
-    "fda", "drug", "vaccine", "climate",
-    # Sports
-    "championship", "world cup", "super bowl", "nba", "nfl", "ufc",
-    "winner", "final", "playoff",
+    "democrat", "republican", "trump", "harris", "biden", "white house",
+    "referendum", "parliament", "government", "minister", "prime minister",
+    "impeach", "indictment", "conviction", "pardon", "executive order",
+    "supreme court", "nominee",
+
+    # ── Crypto & Web3 ─────────────────────────────────────────────────────────
+    "bitcoin", "ethereum", "crypto", "btc", "eth", "sol", "xrp", "bnb",
+    "sec", "etf", "halving", "regulation", "stablecoin", "blockchain",
+    "defi", "nft", "coinbase", "binance", "altcoin", "memecoin",
+
+    # ── Finance / Macro ───────────────────────────────────────────────────────
+    "fed", "federal reserve", "interest rate", "inflation", "gdp", "recession",
+    "stock market", "s&p", "nasdaq", "earnings", "ipo", "merger", "acquisition",
+    "bankruptcy", "tariff", "trade war", "dollar", "oil price", "gold",
+
+    # ── Géopolitique ──────────────────────────────────────────────────────────
+    "war", "conflict", "ceasefire", "sanctions", "nato", "treaty",
+    "invasion", "attack", "military", "nuclear", "ukraine", "russia",
+    "china", "taiwan", "israel", "gaza", "iran",
+
+    # ── Tech & IA ─────────────────────────────────────────────────────────────
+    "artificial intelligence", "openai", "chatgpt", "google", "microsoft",
+    "apple", "meta", "tesla", "spacex", "elon musk", "nvidia",
+    "fda", "drug approval", "vaccine", "climate", "energy",
+
+    # ── Sports ───────────────────────────────────────────────────────────────
+    "championship", "world cup", "super bowl", "nba", "nfl", "ufc", "mma",
+    "winner", "final", "playoff", "mvp", "transfer", "signing",
+    "formula 1", "f1", "wimbledon", "grand slam", "oscar",
+
+    # ── Pop culture / Marchés originaux ───────────────────────────────────────
+    "oscar", "grammy", "emmy", "box office", "album", "tour",
+    "celebrity", "kardashian", "taylor swift", "drake",
+    "netflix", "disney", "streaming", "movie", "sequel",
+    "reality tv", "survivor", "game show",
 ]
 
 REFRESH_INTERVAL = 60   # secondes

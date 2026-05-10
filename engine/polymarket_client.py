@@ -23,14 +23,43 @@ except ImportError:
     logger.warning("py-clob-client non installé")
 
 
-# ── Catégories Polymarket ────────────────────────────────────────────────────
-CATEGORIES = ["politics", "crypto", "sports", "business", "science", "pop culture"]
+# ── Catégories Polymarket — TOUTES exploitées ────────────────────────────────
+# Polymarket propose des marchés sur TOUT : politique, crypto, sports, culture,
+# économie, géopolitique, sciences, tech, santé, people, marchés originaux…
+CATEGORIES = [
+    # Politique & Elections
+    "politics",
+    "elections",
+    "trump",           # marchés originaux très actifs sur Trump
+
+    # Finance & Crypto
+    "crypto",
+    "economics",
+    "business",
+
+    # Sport
+    "sports",
+    "nfl",
+    "nba",
+    "soccer",
+    "mma",
+
+    # Culture & Entertainment
+    "pop culture",
+    "entertainment",
+
+    # Monde & Géopolitique
+    "world",
+    "science",
+    "tech",
+    "health",
+]
 
 # ── Paramètres marché ────────────────────────────────────────────────────────
-MIN_LIQUIDITY_USD   = 1_000    # ignore les marchés trop peu liquides
-MIN_VOLUME_24H      = 500      # volume minimum 24h
-MIN_HOURS_TO_CLOSE  = 24       # ignore les marchés qui ferment dans < 24h
-MAX_HOURS_TO_CLOSE  = 720      # ignore les marchés à > 30 jours (trop incertains)
+MIN_LIQUIDITY_USD   = 500      # abaissé : capturer plus de marchés originaux
+MIN_VOLUME_24H      = 200      # abaissé : marchés originaux ont moins de volume
+MIN_HOURS_TO_CLOSE  = 12       # abaissé : capturer les marchés à court terme
+MAX_HOURS_TO_CLOSE  = 720      # max 30 jours
 
 
 class PolyMarketClient:
