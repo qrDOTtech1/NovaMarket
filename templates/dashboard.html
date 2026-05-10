@@ -480,7 +480,10 @@
         </button>
       </div>
       {% if open_positions %}
-      <button onclick="closeAllPositions()" style="background:rgba(239,154,154,.1);border:1px solid rgba(239,154,154,.3);color:#ef9a9a;border-radius:6px;padding:.3rem .7rem;font-size:.72rem;cursor:pointer;font-family:inherit;">✕ Tout annuler</button>
+      <div style="display:flex;gap:.4rem;align-items:center;">
+        <button onclick="rebalancePositions(this)" style="background:rgba(0,137,123,.1);border:1px solid rgba(0,137,123,.3);color:var(--nova-teal-l);border-radius:6px;padding:.3rem .7rem;font-size:.72rem;cursor:pointer;font-family:inherit;">⚖️ Rééquilibrer IA</button>
+        <button onclick="closeAllPositions()" style="background:rgba(239,154,154,.1);border:1px solid rgba(239,154,154,.3);color:#ef9a9a;border-radius:6px;padding:.3rem .7rem;font-size:.72rem;cursor:pointer;font-family:inherit;">✕ Tout annuler</button>
+      </div>
       {% endif %}
     </div>
 
@@ -765,6 +768,32 @@
       .then(r=>r.json())
       .then(d=>{ if(d.ok) location.reload(); else alert('Erreur: '+d.error); })
       .catch(()=>{});
+  }
+
+  function rebalancePositions(btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳ Analyse en cours…';
+    showToast('⚖️', 'Rééquilibrage IA lancé', 'Perplexity re-analyse chaque position — environ 5-10s par position…', '');
+    fetch('/api/positions/rebalance', {method:'POST'})
+      .then(r => r.json())
+      .then(d => {
+        btn.disabled = false;
+        btn.textContent = '⚖️ Rééquilibrer IA';
+        if (!d.ok) { alert('Erreur: ' + d.error); return; }
+        const r = d.results;
+        let msg = d.summary + '\n\n';
+        if (r.updated && r.updated.length)  msg += '✅ Mis à jour:\n' + r.updated.join('\n') + '\n\n';
+        if (r.merged && r.merged.length)    msg += '🔀 Doublons fusionnés:\n' + r.merged.join('\n') + '\n\n';
+        if (r.closed && r.closed.length)    msg += '🚫 Fermés:\n' + r.closed.join('\n') + '\n\n';
+        if (r.errors && r.errors.length)    msg += '⚠️ Erreurs:\n' + r.errors.join('\n');
+        showToast('✅', 'Rééquilibrage terminé', d.summary, '');
+        setTimeout(() => { alert(msg); location.reload(); }, 800);
+      })
+      .catch(() => {
+        btn.disabled = false;
+        btn.textContent = '⚖️ Rééquilibrer IA';
+        alert('Erreur réseau');
+      });
   }
   function switchTab(name, btn) {
     document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));

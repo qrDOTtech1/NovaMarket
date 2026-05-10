@@ -473,9 +473,10 @@ def batch_analyze(articles: list, markets: list,
                 analysis["estimated_prob"] = max(0.01, min(0.99, analysis["estimated_prob"]))
                 analysis["confidence"] = max(0, min(100, analysis["confidence"]))
 
-            # Marquer ce marché comme estimé dans ce batch — plus jamais appelé
+            # Marquer dans les deux sets — plus jamais appelé (signal ou non)
             if mid:
                 estimated_this_batch.add(mid)
+                blocked_market_ids.add(mid)  # met à jour le set mutable du caller
 
             estimated = analysis["estimated_prob"]
             edge      = abs(estimated - current_prob)

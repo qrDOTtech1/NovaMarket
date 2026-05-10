@@ -227,38 +227,32 @@ class MarketWorker(threading.Thread):
         if not articles:
             return
 
-        # ── Marchés BLOQUÉS : déjà position ouverte → on skip complètement ──
+        # ── Marchés BLOQUÉS : positions ouvertes + déjà analysés ────────────
         open_positions = Position.query.filter_by(
             user_id=self.user_id, result="OPEN"
         ).with_entities(Position.market_id).all()
-        blocked_market_ids = {row[0] for row in open_positions if row[0]}
+        for row in open_positions:
+            if row[0]:
+                self._analyzed_this_session.add(row[0])
 
-        # Marchés analysés cette session (évite double Perplexity dans le batch)
-        blocked_market_ids.update(self._analyzed_this_session)
-
-        if blocked_market_ids:
-            self._log("info", "🔒",
-                      f"{len(blocked_market_ids)} marché(s) déjà ouverts/analysés — skippés")
+        n_blocked = len(self._analyzed_this_session)
+        if n_blocked:
+            self._log("info", "🔒", f"{n_blocked} marché(s) bloqués — skippés sans appel IA")
 
         self._log("info", "🤖",
                   f"Analyse IA de {len(articles)} articles vs {len(self._markets)} marchés… "
                   f"(Perplexity web search + Ollama)")
 
-        # Analyse batch IA — lève AIUnavailableError si IA tombe pendant la session
+        # On passe _analyzed_this_session directement — batch_analyze le remplit
+        # avec TOUS les marchés estimés (signal ou non), bloquant les futurs cycles
         try:
             signals = batch_analyze(articles, self._markets,
-                                    blocked_market_ids=blocked_market_ids)
+                                    blocked_market_ids=self._analyzed_this_session)
         except AIUnavailableError as e:
             self._log("error", "🚫",
                       f"IA indisponible en cours de session : {e} — "
                       "cycle ignoré, prochain essai dans 60s")
-            return  # on ne stoppe pas le bot, juste le cycle courant
-
-        # Enregistrer les marchés analysés pour ne plus les retoucher cette session
-        for sig in signals:
-            mid = sig["market"].get("conditionId", sig["market"].get("condition_id", ""))
-            if mid:
-                self._analyzed_this_session.add(mid)
+            return
 
         # Log articles dans la DB
         for art in articles:

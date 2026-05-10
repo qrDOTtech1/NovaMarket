@@ -423,6 +423,139 @@ def _register_routes(app):
             return jsonify({"ok": False, "error": str(e)[:80]})
         return jsonify({"ok": True, "message": f"Position #{pos_id} annulée"})
 
+    @app.route("/api/positions/rebalance", methods=["POST"])
+    @login_required
+    def api_rebalance_positions():
+        """
+        Rééquilibrage IA des positions ouvertes :
+        1. Fusionne les doublons (même market_id) → garde le meilleur, annule le reste
+        2. Re-analyse chaque position unique avec Perplexity
+        3. Recalcule la mise optimale Kelly selon le bankroll actuel
+        4. Marque les positions confirmées comme bloquées pour les prochains cycles
+        """
+        from engine.ai_analyst import estimate_probability, AIUnavailableError
+        from engine.risk import kelly_size, get_size
+
+        uid = session["user_id"]
+        positions = Position.query.filter_by(user_id=uid, result="OPEN").all()
+        if not positions:
+            return jsonify({"ok": False, "error": "Aucune position ouverte"})
+
+        cred = PolyCredential.query.filter_by(user_id=uid).first()
+        balance = 0.0
+        try:
+            client = PolyMarketClient(cred.get_key()) if cred else None
+            balance = client.get_balance() if client else 0.0
+        except Exception:
+            pass
+
+        # Mode simulation : bankroll virtuel
+        active_session = BotSession.query.filter_by(user_id=uid, status="running").first()
+        if active_session and active_session.mode == "simulation":
+            from worker import SIM_BANKROLL
+            invested = sum(p.size_usd for p in positions)
+            balance = max(SIM_BANKROLL - invested, 1.0)
+        bankroll = balance if balance > 0 else 50.0
+
+        results = {"merged": [], "updated": [], "closed": [], "errors": []}
+
+        # ── 1. Fusionner les doublons ──────────────────────────────────────────
+        by_market: dict = {}
+        for pos in positions:
+            mid = pos.market_id or ""
+            if mid not in by_market:
+                by_market[mid] = []
+            by_market[mid].append(pos)
+
+        to_analyze = []
+        for mid, group in by_market.items():
+            if len(group) > 1:
+                # Garder la position avec la meilleure confiance IA
+                best = max(group, key=lambda p: (p.ai_confidence or 0))
+                for dup in group:
+                    if dup.id != best.id:
+                        dup.result = "CANCELLED"
+                        dup.pnl_usd = 0.0
+                        results["merged"].append(f"#{dup.id} annulé (doublon de #{best.id})")
+                to_analyze.append(best)
+            else:
+                to_analyze.append(group[0])
+
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"ok": False, "error": f"Erreur merge: {str(e)[:80]}"})
+
+        # ── 2. Re-analyser chaque position unique + ajuster Kelly ─────────────
+        open_exposure = sum(p.size_usd for p in to_analyze)
+
+        for pos in to_analyze:
+            try:
+                analysis = estimate_probability(
+                    pos.article_title or pos.market_question[:100],
+                    pos.ai_reasoning or "",
+                    pos.market_question,
+                    pos.entry_price,
+                )
+                ep   = analysis["estimated_prob"]
+                conf = analysis["confidence"]
+                edge = abs(ep - pos.entry_price)
+
+                # Recalcul Kelly avec bankroll actuel
+                new_size, reason = get_size(
+                    edge=edge, confidence=conf,
+                    prob_ai=ep, prob_market=pos.entry_price,
+                    bankroll=bankroll,
+                    open_exposure=max(open_exposure - pos.size_usd, 0),
+                )
+
+                old_size = pos.size_usd
+                if new_size <= 0:
+                    # Signal plus valide : annuler
+                    pos.result = "CANCELLED"
+                    pos.pnl_usd = 0.0
+                    results["closed"].append(
+                        f"#{pos.id} fermé — signal invalide ({reason or 'edge trop faible'})"
+                    )
+                else:
+                    pos.estimated_prob = ep
+                    pos.ai_confidence  = conf
+                    pos.ai_reasoning   = analysis.get("reasoning", pos.ai_reasoning)[:400]
+                    pos.exit_trigger   = analysis.get("exit_trigger", pos.exit_trigger or "")[:200]
+                    pos.thesis         = analysis.get("thesis", pos.thesis or "")[:200]
+                    pos.size_usd       = new_size
+                    pos.ev_usd         = (ep - pos.entry_price) * new_size
+                    open_exposure     += new_size - old_size
+                    results["updated"].append(
+                        f"#{pos.id} {pos.market_question[:50]}… "
+                        f"{old_size:.1f}$→{new_size:.1f}$ conf={conf}% edge={edge:.0%}"
+                    )
+
+                    # Ajouter au set bloqué du worker si actif
+                    worker = BotManager._workers.get(uid)
+                    if worker and pos.market_id:
+                        worker._analyzed_this_session.add(pos.market_id)
+
+            except AIUnavailableError as e:
+                results["errors"].append(f"IA indisponible: {str(e)[:60]}")
+                break
+            except Exception as e:
+                results["errors"].append(f"#{pos.id}: {str(e)[:60]}")
+
+        try:
+            db.session.commit()
+        except Exception as e:
+            db.session.rollback()
+            results["errors"].append(f"Commit: {str(e)[:60]}")
+
+        total_changes = len(results["merged"]) + len(results["updated"]) + len(results["closed"])
+        logger.info(f"[NM] Rebalance user {uid}: {total_changes} changements")
+        return jsonify({"ok": True, "results": results,
+                        "summary": f"{len(results['updated'])} mis à jour, "
+                                   f"{len(results['merged'])} doublons fusionnés, "
+                                   f"{len(results['closed'])} fermés"})
+
     @app.route("/api/positions/close-all", methods=["POST"])
     @login_required
     def api_close_all_positions():
