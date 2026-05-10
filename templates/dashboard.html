@@ -178,15 +178,30 @@
     padding: .05rem .35rem; border-radius: 3px;
   }
 
-  /* ── Close button ── */
-  .tc-close-btn {
-    display:block; width:100%; margin-top:.6rem; padding:.4rem;
-    background:rgba(239,154,154,.08); border:1px solid rgba(239,154,154,.25);
-    color:#ef9a9a; border-radius:5px; font-size:.72rem;
-    font-family:inherit; cursor:pointer; transition:all .15s;
+  /* ── Card actions bar ── */
+  .tc-actions {
+    display:flex; align-items:center; justify-content:space-between;
+    margin-top:.6rem; padding-top:.5rem;
+    border-top:1px solid var(--nova-border);
+    font-size:.68rem; color:var(--nova-muted);
   }
-  .tc-close-btn:hover { background:rgba(239,154,154,.18); color:#fff; }
-  .tc-close-btn:disabled { opacity:.4; cursor:default; }
+  .tc-actions-right { display:flex; gap:.4rem; align-items:center; }
+  .tc-action-link {
+    background:none; border:1px solid var(--nova-border); color:var(--nova-muted);
+    border-radius:4px; padding:.2rem .45rem; font-size:.68rem; cursor:pointer;
+    text-decoration:none; font-family:inherit; transition:all .12s;
+  }
+  .tc-action-link:hover { border-color:var(--nova-teal); color:var(--nova-teal-l); }
+  .tc-action-cancel {
+    background:rgba(239,154,154,.08); border:1px solid rgba(239,154,154,.25);
+    color:#ef9a9a; border-radius:4px; padding:.2rem .5rem;
+    font-size:.68rem; font-family:inherit; cursor:pointer; transition:all .12s;
+  }
+  .tc-action-cancel:hover { background:rgba(239,154,154,.2); color:#fff; }
+  .tc-action-cancel:disabled { opacity:.35; cursor:default; }
+  .tc-pos-id { font-size:.65rem; color:var(--nova-muted); font-family:monospace; }
+  .tc-order-id { font-family:monospace; font-size:.6rem; opacity:.5; max-width:80px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tc-time { font-family:monospace; }
 
   /* ── TRADE CARDS ── */
   .trade-cards-grid {
@@ -474,7 +489,7 @@
       {% if open_positions %}
       <div class="trade-cards-grid">
         {% for p in open_positions %}
-        <div class="trade-card result-open">
+        <div class="trade-card result-open" id="pos-{{ p.id }}">
           <div class="tc-header">
             <div class="tc-badges">
               <span class="badge {% if p.side == 'YES' %}badge-green{% else %}badge-red{% endif %}">{{ p.side }}</span>
@@ -483,7 +498,7 @@
               {% elif p.ai_confidence >= 65 %}<span class="badge badge-teal">conf {{ p.ai_confidence }}%</span>
               {% endif %}
             </div>
-            <span class="tc-result open">OPEN</span>
+            <span class="tc-pos-id">#{{ p.id }}</span>
           </div>
           <div class="tc-question">{{ p.market_question[:120] }}{% if p.market_question|length > 120 %}…{% endif %}</div>
           {% if p.thesis %}
@@ -524,10 +539,17 @@
           {% endif %}
           {% if p.exit_trigger %}
           <div class="tc-exit"><span class="tc-exit-icon">⏳</span><span><strong>En attente de :</strong> {{ p.exit_trigger[:150] }}</span></div>
-          {% else %}
+          {% elif p.hours_to_close %}
           <div class="tc-exit"><span class="tc-exit-icon">📅</span><span>{{ "%.0f"|format(p.hours_to_close or 0) }}h avant fermeture</span></div>
           {% endif %}
-          <button onclick="closePosition({{ p.id }}, this)" class="tc-close-btn" title="Annuler cette position">✕ Fermer</button>
+          <div class="tc-actions">
+            <span class="tc-time">{{ p.timestamp.strftime('%d/%m %H:%M') }}</span>
+            {% if p.order_id %}<span class="tc-order-id" title="{{ p.order_id }}">{{ p.order_id[:12] }}…</span>{% endif %}
+            <div class="tc-actions-right">
+              <a href="https://polymarket.com" target="_blank" rel="noopener" class="tc-action-link" title="Voir sur Polymarket">↗</a>
+              <button onclick="closePosition({{ p.id }}, this)" class="tc-action-cancel" title="Annuler cette position">✕ Annuler</button>
+            </div>
+          </div>
         </div>
         {% endfor %}
       </div>

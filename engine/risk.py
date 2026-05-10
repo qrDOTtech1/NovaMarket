@@ -21,7 +21,7 @@ MAX_BANKROLL_PCT_CATEGORY   = 0.45   # max 45% par catégorie
 DAILY_LOSS_LIMIT_PCT        = 0.40   # stop seulement si -40% sur la journée
 MIN_EDGE_TO_TRADE           = 0.08   # edge minimum 8%
 MIN_CONFIDENCE_TO_TRADE     = 45     # confiance minimum 45%
-MAX_ACTIVE_POSITIONS        = 20     # jusqu'à 20 positions simultanées
+MAX_ACTIVE_POSITIONS        = 999    # pas de limite artificielle — le bankroll est la seule limite
 
 # ── Kelly fractions dynamiques ────────────────────────────────────────────────
 def _kelly_fraction(confidence: int) -> float:
