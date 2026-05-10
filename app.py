@@ -42,6 +42,30 @@ def create_app():
 
     with app.app_context():
         db.create_all()
+
+        # Migration manuelle : ajouter colonne user_id à NewsLog si elle n'existe pas
+        # (fallback si Alembic n'est pas disponible)
+        try:
+            from sqlalchemy import inspect, text
+            inspector = inspect(db.engine)
+            news_cols = [c["name"] for c in inspector.get_columns("news_logs")]
+            if "user_id" not in news_cols:
+                logger.info("[DB] Migration : ajout colonne user_id à news_logs…")
+                with db.engine.connect() as conn:
+                    if "postgresql" in db_url:
+                        conn.execute(text(
+                            "ALTER TABLE news_logs ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1 "
+                            "CONSTRAINT news_logs_user_id_fkey REFERENCES users(id) ON DELETE CASCADE"
+                        ))
+                    elif "sqlite" in db_url:
+                        conn.execute(text(
+                            "ALTER TABLE news_logs ADD COLUMN user_id INTEGER NOT NULL DEFAULT 1"
+                        ))
+                    conn.commit()
+                    logger.info("[DB] Migration OK : colonne user_id ajoutée")
+        except Exception as e:
+            logger.warning(f"[DB] Migration user_id échouée (peut-être déjà migrée): {e}")
+
         # Avertir si SQLite (éphémère sur Railway → données perdues au redeploy)
         if "sqlite" in db_url:
             logger.warning(
