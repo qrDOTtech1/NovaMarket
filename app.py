@@ -216,8 +216,13 @@ def _register_routes(app):
         winrate   = round(wins / (wins + losses) * 100, 1) if (wins + losses) else 0
 
         cb = CircuitBreaker.get(uid)
-        is_running = BotManager.is_running(uid)
-        sim_mode   = (active_session.mode == "simulation") if active_session else False
+
+        # is_running : thread en mémoire (même processus) OU session DB active
+        # Nécessaire car Gunicorn multi-process — chaque worker a sa propre mémoire
+        is_running = BotManager.is_running(uid) or (
+            active_session is not None and active_session.stopped_at is None
+        )
+        sim_mode = (active_session.mode == "simulation") if active_session else False
 
         return render_template("dashboard.html",
             user=user,
@@ -248,7 +253,14 @@ def _register_routes(app):
 
         if not cred or not cred.verified_at:
             return jsonify({"ok": False, "error": "Configure ta clé Polymarket d'abord"})
-        if BotManager.is_running(uid):
+
+        # Vérifier en mémoire ET en DB (multi-process Gunicorn)
+        already_running = BotManager.is_running(uid) or bool(
+            BotSession.query.filter_by(user_id=uid, status="running").filter(
+                BotSession.stopped_at.is_(None)
+            ).first()
+        )
+        if already_running:
             return jsonify({"ok": False, "error": "Bot déjà en cours"})
 
         # ── Déterminer le mode : simulation si solde < 10$ ────────────────────
@@ -289,8 +301,17 @@ def _register_routes(app):
     @login_required
     def bot_stop():
         uid = session["user_id"]
-        stopped = BotManager.stop(uid)
-        return jsonify({"ok": stopped})
+        BotManager.stop(uid)
+        # Forcer la mise à jour en DB même si le thread est dans un autre worker
+        stale = BotSession.query.filter_by(user_id=uid, status="running").filter(
+            BotSession.stopped_at.is_(None)
+        ).all()
+        for s in stale:
+            s.status     = "stopped"
+            s.stopped_at = datetime.utcnow()
+        if stale:
+            db.session.commit()
+        return jsonify({"ok": True})
 
     # ── API ───────────────────────────────────────────────────────────────────
 
