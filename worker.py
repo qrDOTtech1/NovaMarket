@@ -281,11 +281,21 @@ class MarketWorker(threading.Thread):
     def _execute_signal(self, sig: dict, client: PolyMarketClient,
                         bankroll: float, cb, active_count: int):
         market   = sig["market"]
+        market_id = market.get("conditionId", market.get("condition_id", ""))
         question = market.get("question", market.get("title", ""))[:120]
         category = market.get("category", "general")
         side     = sig["side"]
         edge     = sig["edge"]
         conf     = sig["confidence"]
+
+        # ── VÉRIF : UNE SEULE position OPEN par marché ───────────────────────
+        existing = Position.query.filter_by(
+            user_id=self.user_id, market_id=market_id, result="OPEN"
+        ).first()
+        if existing:
+            self._log("info", "🔁",
+                      f"Position déjà ouverte sur [{question[:50]}…] — signal ignoré")
+            return
 
         cb_session = CircuitBreaker.get(self.user_id)
         open_exp   = cb_session.open_exposure if cb_session else 0

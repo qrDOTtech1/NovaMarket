@@ -496,5 +496,22 @@ def batch_analyze(articles: list, markets: list) -> list:
                 f"edge={edge:.0%} conf={conf}%"
             )
 
+    # ── Déduplication : UN SEUL signal par market_id ────────────────────────
+    # Plusieurs articles peuvent pointer vers le même marché → on garde le meilleur
+    best_per_market: dict[str, dict] = {}
+    for c in candidates:
+        mid = c["market"].get("conditionId", c["market"].get("condition_id", ""))
+        score = c["edge"] * c["confidence"]
+        if mid not in best_per_market or score > best_per_market[mid]["_score"]:
+            c["_score"] = score
+            best_per_market[mid] = c
+
+    deduped = list(best_per_market.values())
+    for c in deduped:
+        c.pop("_score", None)
+
+    if len(candidates) != len(deduped):
+        logger.info(f"[AI] Dédup marchés : {len(candidates)} signaux → {len(deduped)} uniques")
+
     # Tri par edge × confidence (meilleurs signaux en premier)
-    return sorted(candidates, key=lambda x: x["edge"] * x["confidence"], reverse=True)
+    return sorted(deduped, key=lambda x: x["edge"] * x["confidence"], reverse=True)

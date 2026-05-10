@@ -178,6 +178,16 @@
     padding: .05rem .35rem; border-radius: 3px;
   }
 
+  /* ── Close button ── */
+  .tc-close-btn {
+    display:block; width:100%; margin-top:.6rem; padding:.4rem;
+    background:rgba(239,154,154,.08); border:1px solid rgba(239,154,154,.25);
+    color:#ef9a9a; border-radius:5px; font-size:.72rem;
+    font-family:inherit; cursor:pointer; transition:all .15s;
+  }
+  .tc-close-btn:hover { background:rgba(239,154,154,.18); color:#fff; }
+  .tc-close-btn:disabled { opacity:.4; cursor:default; }
+
   /* ── TRADE CARDS ── */
   .trade-cards-grid {
     display: grid;
@@ -443,15 +453,20 @@
 
   <!-- ── TRADE CARDS ── -->
   <div class="card">
-    <div class="tab-bar">
-      <button class="tab-btn active" onclick="switchTab('open',this)">
-        🟢 Ouvertes
-        {% if open_positions %}<span class="badge badge-teal" style="margin-left:.3rem;">{{ open_positions|length }}</span>{% endif %}
-      </button>
-      <button class="tab-btn" onclick="switchTab('closed',this)">
-        🏁 Historique
-        {% if closed_positions %}<span class="badge badge-muted" style="margin-left:.3rem;">{{ closed_positions|length }}</span>{% endif %}
-      </button>
+    <div class="tab-bar" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;">
+      <div style="display:flex;gap:0;">
+        <button class="tab-btn active" onclick="switchTab('open',this)">
+          🟢 Ouvertes
+          {% if open_positions %}<span class="badge badge-teal" style="margin-left:.3rem;">{{ open_positions|length }}</span>{% endif %}
+        </button>
+        <button class="tab-btn" onclick="switchTab('closed',this)">
+          🏁 Historique
+          {% if closed_positions %}<span class="badge badge-muted" style="margin-left:.3rem;">{{ closed_positions|length }}</span>{% endif %}
+        </button>
+      </div>
+      {% if open_positions %}
+      <button onclick="closeAllPositions()" style="background:rgba(239,154,154,.1);border:1px solid rgba(239,154,154,.3);color:#ef9a9a;border-radius:6px;padding:.3rem .7rem;font-size:.72rem;cursor:pointer;font-family:inherit;">✕ Tout annuler</button>
+      {% endif %}
     </div>
 
     <!-- Positions ouvertes -->
@@ -512,6 +527,7 @@
           {% else %}
           <div class="tc-exit"><span class="tc-exit-icon">📅</span><span>{{ "%.0f"|format(p.hours_to_close or 0) }}h avant fermeture</span></div>
           {% endif %}
+          <button onclick="closePosition({{ p.id }}, this)" class="tc-close-btn" title="Annuler cette position">✕ Fermer</button>
         </div>
         {% endfor %}
       </div>
@@ -712,6 +728,21 @@
     const btn=document.getElementById('stop-btn');
     btn.disabled=true; btn.textContent='…';
     fetch('/bot/stop',{method:'POST'}).then(()=>location.reload()).catch(()=>location.reload());
+  }
+  function closePosition(id, btn) {
+    if(!confirm('Annuler cette position #'+id+' ?')) return;
+    btn.disabled=true; btn.textContent='…';
+    fetch('/api/positions/'+id+'/close',{method:'POST'})
+      .then(r=>r.json())
+      .then(d=>{ if(d.ok) location.reload(); else { alert('Erreur: '+d.error); btn.disabled=false; btn.textContent='✕ Fermer'; }})
+      .catch(()=>{ btn.disabled=false; btn.textContent='✕ Fermer'; });
+  }
+  function closeAllPositions() {
+    if(!confirm('Annuler TOUTES les positions ouvertes ?')) return;
+    fetch('/api/positions/close-all',{method:'POST'})
+      .then(r=>r.json())
+      .then(d=>{ if(d.ok) location.reload(); else alert('Erreur: '+d.error); })
+      .catch(()=>{});
   }
   function switchTab(name, btn) {
     document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));

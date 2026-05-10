@@ -403,6 +403,46 @@ def _register_routes(app):
                   .limit(30).all())
         return jsonify({"positions": [p.to_dict() for p in pos]})
 
+    @app.route("/api/positions/<int:pos_id>/close", methods=["POST"])
+    @login_required
+    def api_close_position(pos_id):
+        """Fermer / annuler manuellement une position."""
+        uid = session["user_id"]
+        pos = Position.query.filter_by(id=pos_id, user_id=uid, result="OPEN").first()
+        if not pos:
+            return jsonify({"ok": False, "error": "Position introuvable ou déjà fermée"})
+
+        pos.result = "CANCELLED"
+        pos.pnl_usd = 0.0
+        pos.exit_price = pos.current_price or pos.entry_price
+        try:
+            db.session.commit()
+            logger.info(f"[NM] Position #{pos_id} annulée manuellement par user {uid}")
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"ok": False, "error": str(e)[:80]})
+        return jsonify({"ok": True, "message": f"Position #{pos_id} annulée"})
+
+    @app.route("/api/positions/close-all", methods=["POST"])
+    @login_required
+    def api_close_all_positions():
+        """Fermer toutes les positions ouvertes."""
+        uid = session["user_id"]
+        positions = Position.query.filter_by(user_id=uid, result="OPEN").all()
+        closed = 0
+        for pos in positions:
+            pos.result = "CANCELLED"
+            pos.pnl_usd = 0.0
+            pos.exit_price = pos.current_price or pos.entry_price
+            closed += 1
+        try:
+            db.session.commit()
+            logger.info(f"[NM] {closed} positions annulées par user {uid}")
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"ok": False, "error": str(e)[:80]})
+        return jsonify({"ok": True, "message": f"{closed} position(s) annulée(s)"})
+
     @app.route("/api/news")
     @login_required
     def api_news():
