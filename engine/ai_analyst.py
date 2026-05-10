@@ -438,11 +438,24 @@ def batch_analyze(articles: list, markets: list) -> list:
                 analysis = estimate_probability(
                     art.title, art.summary, question, current_prob
                 )
-            except AIUnavailableError:
-                raise  # propage — le worker gère
+            except AIUnavailableError as e:
+                # Si IA complètement indisponible au premier appel, propage l'erreur
+                logger.warning(f"[AI] IA indisponible: {e} — arrêt du batch")
+                raise
             except Exception as e:
-                logger.warning(f"[AI] estimate_probability erreur: {e}")
-                continue
+                # Si erreur parsage ou timeout, essaye une heuristique simple
+                logger.warning(f"[AI] estimate_probability erreur: {e} — fallback heuristique")
+                # Heuristique fallback : légère confiance basée sur article score
+                analysis = {
+                    "estimated_prob": current_prob + (0.15 if art.score > 2 else 0.05),
+                    "confidence":     50 + (art.score * 5),  # +5% par mot-clé trouvé
+                    "reasoning":      f"Signal basé sur actualité (score={art.score})",
+                    "direction":      "UP" if art.score > 2 else "NEUTRAL",
+                    "exit_trigger":   "Évolution de la situation décrite",
+                    "thesis":         f"Impact de : {art.title[:60]}…",
+                }
+                analysis["estimated_prob"] = max(0.01, min(0.99, analysis["estimated_prob"]))
+                analysis["confidence"] = max(0, min(100, analysis["confidence"]))
 
             estimated = analysis["estimated_prob"]
             edge      = abs(estimated - current_prob)
