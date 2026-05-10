@@ -2,7 +2,7 @@
 {% block title %}Dashboard — NovaMarket{% endblock %}
 {% block extra_head %}
 <style>
-  .dash-wrap { padding: .75rem; max-width: 1140px; margin: 0 auto; }
+  .dash-wrap { padding: .75rem; max-width: 1200px; margin: 0 auto; }
 
   /* ── Top bar ── */
   .top-bar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.75rem; margin-bottom:1rem; }
@@ -28,12 +28,12 @@
   .kpi-val.neg  { color:var(--nova-red); }
   .kpi-val.teal { color:var(--nova-teal-l); }
 
-  /* ── Main grid ── */
-  .main-grid { display:grid; grid-template-columns:1fr; gap:1rem; }
-  @media(min-width:768px){ .main-grid{grid-template-columns:1fr 1fr;} .main-grid .span2{grid-column:span 2;} }
+  /* ── Row 1 : Activity + CB ── */
+  .row-top { display:grid; grid-template-columns:1fr; gap:1rem; margin-bottom:1rem; }
+  @media(min-width:768px){ .row-top { grid-template-columns:2fr 1fr; } }
 
   /* ── Activity feed ── */
-  .activity-feed { height:300px; overflow-y:auto; display:flex; flex-direction:column; gap:.3rem; font-size:.78rem; }
+  .activity-feed { height:280px; overflow-y:auto; display:flex; flex-direction:column; gap:.3rem; font-size:.78rem; }
   .activity-feed::-webkit-scrollbar{width:4px} .activity-feed::-webkit-scrollbar-thumb{background:var(--nova-border);border-radius:2px}
   .act-row { display:flex; gap:.5rem; align-items:flex-start; padding:.3rem .4rem; border-radius:5px; }
   .act-time { color:var(--nova-muted); min-width:52px; flex-shrink:0; font-family:monospace; }
@@ -42,6 +42,116 @@
   .act-row.error   .act-msg { color:#ef9a9a; }
   .act-row.warning .act-msg { color:#ffe082; }
   .act-row.success .act-msg { color:#a5d6a7; }
+
+  /* ── CB panel ── */
+  .cb-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:.5rem; font-size:.8rem; }
+  .cb-item { display:flex; flex-direction:column; gap:.15rem; }
+  .cb-val  { font-weight:700; color:var(--nova-teal-l); }
+  .cb-lbl  { font-size:.68rem; color:var(--nova-muted); text-transform:uppercase; }
+
+  /* ── RSS NEWS STREAM ── */
+  .news-stream-wrap { margin-bottom:1rem; }
+  .news-stream-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: .6rem;
+    flex-wrap: wrap;
+    gap: .5rem;
+  }
+  .news-stream-title {
+    font-size: .75rem; font-weight: 700;
+    text-transform: uppercase; letter-spacing: .06em;
+    color: var(--nova-muted);
+    display: flex; align-items: center; gap: .5rem;
+  }
+  .live-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--nova-green);
+    animation: pulse 1.4s infinite;
+    flex-shrink: 0;
+  }
+  .news-counter {
+    font-size: .7rem;
+    color: var(--nova-muted);
+  }
+  /* Feed principal — défile vers le bas */
+  .news-stream {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    height: 260px;
+    overflow-y: auto;
+    background: var(--nova-bg);
+    border: 1px solid var(--nova-border);
+    border-radius: var(--nova-radius);
+  }
+  .news-stream::-webkit-scrollbar{width:4px} .news-stream::-webkit-scrollbar-thumb{background:var(--nova-border);border-radius:2px}
+
+  .ns-item {
+    display: flex;
+    align-items: flex-start;
+    gap: .65rem;
+    padding: .55rem .85rem;
+    border-bottom: 1px solid rgba(30,47,64,.5);
+    transition: background .15s;
+    animation: slideIn .3s ease;
+  }
+  .ns-item:last-child { border-bottom: none; }
+  .ns-item:hover { background: rgba(0,137,123,.04); }
+  @keyframes slideIn { from{opacity:0;transform:translateY(-6px)} to{opacity:1;transform:translateY(0)} }
+
+  /* Badge source */
+  .ns-source {
+    flex-shrink: 0;
+    font-size: .65rem;
+    font-weight: 700;
+    padding: .15rem .45rem;
+    border-radius: 4px;
+    background: rgba(0,137,123,.12);
+    color: var(--nova-teal-l);
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    margin-top: .12rem;
+    max-width: 70px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  /* Variantes couleur par catégorie */
+  .ns-source.pol  { background:rgba(239,83,80,.12); color:#ef9a9a; }
+  .ns-source.cryp { background:rgba(255,179,0,.12);  color:var(--nova-gold); }
+  .ns-source.sprt { background:rgba(102,187,106,.12); color:#a5d6a7; }
+  .ns-source.tech { background:rgba(66,165,245,.12);  color:#90caf9; }
+  .ns-source.ent  { background:rgba(186,104,200,.12); color:#ce93d8; }
+
+  .ns-body { flex: 1; min-width: 0; }
+  .ns-title {
+    font-size: .81rem;
+    color: var(--nova-text);
+    line-height: 1.35;
+    margin-bottom: .2rem;
+    word-break: break-word;
+  }
+  .ns-meta {
+    display: flex;
+    gap: .5rem;
+    font-size: .68rem;
+    color: var(--nova-muted);
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .ns-signal {
+    display: inline-flex; align-items: center; gap: .2rem;
+    background: rgba(102,187,106,.12); color: #a5d6a7;
+    padding: .05rem .35rem; border-radius: 3px;
+    font-weight: 600;
+  }
+  .ns-score {
+    display: inline-flex; align-items: center; gap: .2rem;
+    background: rgba(0,137,123,.1); color: var(--nova-teal-l);
+    padding: .05rem .35rem; border-radius: 3px;
+  }
 
   /* ── TRADE CARDS ── */
   .trade-cards-grid {
@@ -61,139 +171,34 @@
   .trade-card.result-loss { border-color: rgba(239,83,80,.3); }
   .trade-card.result-open { border-color: rgba(0,137,123,.3); }
 
-  /* Card header */
-  .tc-header {
-    padding: .7rem .9rem .5rem;
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: .5rem;
-  }
+  .tc-header { padding:.7rem .9rem .5rem; display:flex; justify-content:space-between; align-items:flex-start; gap:.5rem; }
   .tc-badges { display:flex; gap:.3rem; flex-wrap:wrap; }
-  .tc-result {
-    font-size: .8rem;
-    font-weight: 700;
-    padding: .2rem .6rem;
-    border-radius: 20px;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
+  .tc-result { font-size:.8rem; font-weight:700; padding:.2rem .6rem; border-radius:20px; white-space:nowrap; flex-shrink:0; }
   .tc-result.open { background:rgba(0,137,123,.15); color:var(--nova-teal-l); }
   .tc-result.win  { background:rgba(102,187,106,.15); color:#a5d6a7; }
   .tc-result.loss { background:rgba(239,83,80,.15); color:#ef9a9a; }
 
-  /* Question */
-  .tc-question {
-    font-size: .88rem;
-    font-weight: 600;
-    line-height: 1.35;
-    padding: 0 .9rem .6rem;
-    color: var(--nova-text);
-  }
+  .tc-question { font-size:.88rem; font-weight:600; line-height:1.35; padding:0 .9rem .6rem; color:var(--nova-text); }
+  .tc-thesis { margin:0 .9rem .6rem; padding:.5rem .75rem; background:rgba(0,137,123,.08); border-left:3px solid var(--nova-teal); border-radius:0 6px 6px 0; font-size:.78rem; color:var(--nova-teal-l); line-height:1.4; font-style:italic; }
 
-  /* Thesis bar */
-  .tc-thesis {
-    margin: 0 .9rem .6rem;
-    padding: .5rem .75rem;
-    background: rgba(0,137,123,.08);
-    border-left: 3px solid var(--nova-teal);
-    border-radius: 0 6px 6px 0;
-    font-size: .78rem;
-    color: var(--nova-teal-l);
-    line-height: 1.4;
-    font-style: italic;
-  }
+  .tc-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:0; border-top:1px solid var(--nova-border); border-bottom:1px solid var(--nova-border); }
+  .tc-stat { padding:.5rem .4rem; text-align:center; border-right:1px solid var(--nova-border); }
+  .tc-stat:last-child { border-right:none; }
+  .tc-stat-val { font-size:.85rem; font-weight:700; }
+  .tc-stat-lbl { font-size:.62rem; color:var(--nova-muted); text-transform:uppercase; margin-top:.1rem; }
 
-  /* Stats row */
-  .tc-stats {
-    display: grid;
-    grid-template-columns: repeat(4,1fr);
-    gap: 0;
-    border-top: 1px solid var(--nova-border);
-    border-bottom: 1px solid var(--nova-border);
-  }
-  .tc-stat {
-    padding: .5rem .4rem;
-    text-align: center;
-    border-right: 1px solid var(--nova-border);
-  }
-  .tc-stat:last-child { border-right: none; }
-  .tc-stat-val { font-size: .85rem; font-weight: 700; }
-  .tc-stat-lbl { font-size: .62rem; color: var(--nova-muted); text-transform: uppercase; margin-top: .1rem; }
+  .tc-progress-wrap { padding:.65rem .9rem .4rem; }
+  .tc-progress-label { display:flex; justify-content:space-between; font-size:.7rem; color:var(--nova-muted); margin-bottom:.3rem; }
+  .tc-bar-track { height:6px; background:rgba(255,255,255,.07); border-radius:3px; overflow:hidden; position:relative; }
+  .tc-bar-market { position:absolute; height:100%; background:var(--nova-muted); border-radius:3px; opacity:.4; }
+  .tc-bar-ai { position:absolute; height:100%; border-radius:3px; }
+  .tc-bar-ai.up   { background:var(--nova-green); }
+  .tc-bar-ai.down { background:var(--nova-red); }
 
-  /* Progress bar */
-  .tc-progress-wrap { padding: .65rem .9rem .4rem; }
-  .tc-progress-label {
-    display: flex;
-    justify-content: space-between;
-    font-size: .7rem;
-    color: var(--nova-muted);
-    margin-bottom: .3rem;
-  }
-  .tc-bar-track {
-    height: 6px;
-    background: rgba(255,255,255,.07);
-    border-radius: 3px;
-    overflow: hidden;
-    position: relative;
-  }
-  .tc-bar-market {
-    position: absolute;
-    height: 100%;
-    background: var(--nova-muted);
-    border-radius: 3px;
-    opacity: .4;
-  }
-  .tc-bar-ai {
-    position: absolute;
-    height: 100%;
-    border-radius: 3px;
-  }
-  .tc-bar-ai.up   { background: var(--nova-green); }
-  .tc-bar-ai.down { background: var(--nova-red); }
-
-  /* Reasoning */
-  .tc-reasoning {
-    padding: .5rem .9rem;
-    font-size: .76rem;
-    color: var(--nova-muted);
-    line-height: 1.5;
-  }
-  .tc-reasoning strong { color: var(--nova-text); font-weight: 600; }
-
-  /* Exit trigger */
-  .tc-exit {
-    padding: .4rem .9rem .75rem;
-    font-size: .74rem;
-    color: var(--nova-gold);
-    display: flex;
-    align-items: flex-start;
-    gap: .4rem;
-    line-height: 1.4;
-  }
+  .tc-reasoning { padding:.5rem .9rem; font-size:.76rem; color:var(--nova-muted); line-height:1.5; }
+  .tc-reasoning strong { color:var(--nova-text); font-weight:600; }
+  .tc-exit { padding:.4rem .9rem .75rem; font-size:.74rem; color:var(--nova-gold); display:flex; align-items:flex-start; gap:.4rem; line-height:1.4; }
   .tc-exit-icon { flex-shrink:0; font-size:.85rem; }
-
-  /* PnL overlay pour WIN/LOSS */
-  .tc-pnl {
-    text-align: center;
-    padding: .5rem;
-    font-size: 1rem;
-    font-weight: 700;
-  }
-
-  /* ── News feed ── */
-  .news-list { display:flex; flex-direction:column; gap:.5rem; max-height:320px; overflow-y:auto; }
-  .news-list::-webkit-scrollbar{width:4px} .news-list::-webkit-scrollbar-thumb{background:var(--nova-border);border-radius:2px}
-  .news-item { border-bottom:1px solid rgba(30,47,64,.5); padding-bottom:.5rem; }
-  .news-item:last-child{border-bottom:none;padding-bottom:0}
-  .news-item-title{font-size:.82rem;color:var(--nova-text);line-height:1.35;margin-bottom:.2rem;}
-  .news-item-meta{display:flex;gap:.6rem;font-size:.7rem;color:var(--nova-muted);flex-wrap:wrap;}
-
-  /* ── CB panel ── */
-  .cb-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:.5rem; font-size:.8rem; }
-  .cb-item { display:flex; flex-direction:column; gap:.15rem; }
-  .cb-val  { font-weight:700; color:var(--nova-teal-l); }
-  .cb-lbl  { font-size:.68rem; color:var(--nova-muted); text-transform:uppercase; }
 
   /* ── Tabs ── */
   .tab-bar { display:flex; gap:.3rem; margin-bottom:.75rem; border-bottom:1px solid var(--nova-border); padding-bottom:.5rem; }
@@ -202,11 +207,9 @@
   .tab-panel { display:none; }
   .tab-panel.active { display:block; }
 
-  /* ── No data ── */
+  /* ── Misc ── */
   .no-data { text-align:center; padding:2rem 1rem; color:var(--nova-muted); font-size:.82rem; }
   .no-data-icon { font-size:1.8rem; margin-bottom:.5rem; }
-
-  /* ── Alert ── */
   .cb-alert { background:rgba(239,83,80,.1); border:1px solid rgba(239,83,80,.25); border-radius:8px; padding:.75rem 1rem; color:#ef9a9a; font-size:.82rem; display:flex; align-items:center; gap:.6rem; margin-bottom:1rem; }
 </style>
 {% endblock %}
@@ -262,8 +265,8 @@
     </div>
   </div>
 
-  <!-- ── Main grid ── -->
-  <div class="main-grid">
+  <!-- ── Row 1 : Activité + CB ── -->
+  <div class="row-top">
 
     <!-- Activité live -->
     <div class="card">
@@ -281,244 +284,209 @@
       </div>
     </div>
 
-    <!-- CB + News -->
-    <div style="display:flex;flex-direction:column;gap:1rem;">
+    <!-- Circuit Breaker -->
+    <div class="card">
+      <div class="card-title">🛡️ Circuit Breaker</div>
+      {% if cb %}
+      <div class="cb-grid">
+        <div class="cb-item">
+          <span class="cb-val {% if cb.winrate >= 50 %}text-green{% else %}text-red{% endif %}">{{ cb.winrate }}%</span>
+          <span class="cb-lbl">Win rate session</span>
+        </div>
+        <div class="cb-item">
+          <span class="cb-val">{{ cb.consecutive_losses }}</span>
+          <span class="cb-lbl">Pertes consécutives</span>
+        </div>
+        <div class="cb-item">
+          <span class="cb-val">{{ "%.2f"|format(cb.open_exposure) }}$</span>
+          <span class="cb-lbl">Exposition ouverte</span>
+        </div>
+        <div class="cb-item">
+          <span class="cb-val {% if cb.daily_triggered %}text-red{% else %}text-green{% endif %}">
+            {% if cb.daily_triggered %}STOP{% else %}OK{% endif %}
+          </span>
+          <span class="cb-lbl">Daily limit</span>
+        </div>
+      </div>
+      <!-- AI status ici -->
+      <div style="margin-top:1rem; padding-top:.75rem; border-top:1px solid var(--nova-border);">
+        <div style="font-size:.68rem; color:var(--nova-muted); text-transform:uppercase; margin-bottom:.5rem;">Statut IA</div>
+        <div style="display:flex; gap:.4rem; flex-wrap:wrap;">
+          <span id="ai-ollama" class="badge badge-muted">Ollama …</span>
+          <span id="ai-pplx"   class="badge badge-muted">Perplexity …</span>
+        </div>
+      </div>
+      {% else %}
+      <div class="no-data" style="padding:1rem;"><p>Aucune session active</p></div>
+      <div style="margin-top:.5rem; padding:.75rem; border-top:1px solid var(--nova-border);">
+        <div style="font-size:.68rem; color:var(--nova-muted); text-transform:uppercase; margin-bottom:.5rem;">Statut IA</div>
+        <div style="display:flex; gap:.4rem; flex-wrap:wrap;">
+          <span id="ai-ollama" class="badge badge-muted">Ollama …</span>
+          <span id="ai-pplx"   class="badge badge-muted">Perplexity …</span>
+        </div>
+      </div>
+      {% endif %}
+      {% if cred and cred.verified_at %}
+      <div style="margin-top:.75rem; font-size:.75rem; color:var(--nova-muted);">
+        Wallet : <span class="text-teal" id="balance-val">…</span> USDC
+      </div>
+      {% endif %}
+    </div>
+  </div>
 
-      <!-- Circuit Breaker -->
-      <div class="card">
-        <div class="card-title">🛡️ Circuit Breaker</div>
-        {% if cb %}
-        <div class="cb-grid">
-          <div class="cb-item">
-            <span class="cb-val {% if cb.winrate >= 50 %}text-green{% else %}text-red{% endif %}">{{ cb.winrate }}%</span>
-            <span class="cb-lbl">Win rate session</span>
-          </div>
-          <div class="cb-item">
-            <span class="cb-val">{{ cb.consecutive_losses }}</span>
-            <span class="cb-lbl">Pertes consécutives</span>
-          </div>
-          <div class="cb-item">
-            <span class="cb-val">{{ "%.2f"|format(cb.open_exposure) }}$</span>
-            <span class="cb-lbl">Exposition ouverte</span>
-          </div>
-          <div class="cb-item">
-            <span class="cb-val {% if cb.daily_triggered %}text-red{% else %}text-green{% endif %}">
-              {% if cb.daily_triggered %}STOP{% else %}OK{% endif %}
-            </span>
-            <span class="cb-lbl">Daily limit</span>
+  <!-- ── RSS NEWS STREAM ── -->
+  <div class="news-stream-wrap card">
+    <div class="news-stream-header">
+      <div class="news-stream-title">
+        <span class="live-dot"></span>
+        Flux RSS — News en direct
+      </div>
+      <div style="display:flex; align-items:center; gap:.75rem;">
+        <span class="news-counter" id="news-counter">0 articles</span>
+        <!-- Filtre source -->
+        <select id="news-filter" onchange="filterNews()" style="background:var(--nova-bg);border:1px solid var(--nova-border);color:var(--nova-muted);border-radius:6px;padding:.2rem .5rem;font-size:.72rem;font-family:inherit;cursor:pointer;">
+          <option value="">Toutes les sources</option>
+          <option value="signal">🔥 Avec signaux</option>
+          <option value="relevant">📈 Pertinents</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="news-stream" id="news-stream">
+      {% for n in recent_news %}
+      <div class="ns-item" data-signals="{{ n.signals_gen }}" data-relevance="{{ n.relevance }}">
+        <span class="ns-source">{{ n.source[:10] }}</span>
+        <div class="ns-body">
+          <div class="ns-title">{{ n.title[:120] }}{% if n.title|length > 120 %}…{% endif %}</div>
+          <div class="ns-meta">
+            <span>{{ n.timestamp.strftime('%H:%M:%S') }}</span>
+            {% if n.relevance > 0 %}<span class="ns-score">📊 {{ n.relevance }}</span>{% endif %}
+            {% if n.signals_gen > 0 %}<span class="ns-signal">⚡ {{ n.signals_gen }} signal{% if n.signals_gen > 1 %}s{% endif %}</span>{% endif %}
           </div>
         </div>
-        {% else %}
-        <div class="no-data" style="padding:1rem;"><p>Aucune session active</p></div>
-        {% endif %}
       </div>
+      {% else %}
+      <div class="no-data" id="news-empty">
+        <div class="no-data-icon">📡</div>
+        <p>Les articles RSS apparaîtront ici dès que le bot tourne</p>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
 
-      <!-- News -->
-      <div class="card">
-        <div class="card-title">📰 News analysées</div>
-        <div class="news-list" id="news-list">
-          {% for n in recent_news %}
-          <div class="news-item">
-            <div class="news-item-title">{{ n.title[:85] }}{% if n.title|length > 85 %}…{% endif %}</div>
-            <div class="news-item-meta">
-              <span>{{ n.source }}</span>
-              <span>{{ n.timestamp.strftime('%H:%M') }}</span>
-              {% if n.relevance > 0 %}<span class="text-teal">score {{ n.relevance }}</span>{% endif %}
-              {% if n.signals_gen > 0 %}<span class="text-green">{{ n.signals_gen }} signal(s)</span>{% endif %}
+  <!-- ── TRADE CARDS ── -->
+  <div class="card">
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab('open',this)">
+        🟢 Ouvertes
+        {% if open_positions %}<span class="badge badge-teal" style="margin-left:.3rem;">{{ open_positions|length }}</span>{% endif %}
+      </button>
+      <button class="tab-btn" onclick="switchTab('closed',this)">
+        🏁 Historique
+        {% if closed_positions %}<span class="badge badge-muted" style="margin-left:.3rem;">{{ closed_positions|length }}</span>{% endif %}
+      </button>
+    </div>
+
+    <!-- Positions ouvertes -->
+    <div class="tab-panel active" id="tab-open">
+      {% if open_positions %}
+      <div class="trade-cards-grid">
+        {% for p in open_positions %}
+        <div class="trade-card result-open">
+          <div class="tc-header">
+            <div class="tc-badges">
+              <span class="badge {% if p.side == 'YES' %}badge-green{% else %}badge-red{% endif %}">{{ p.side }}</span>
+              <span class="badge badge-muted">{{ p.category }}</span>
+              {% if p.ai_confidence >= 80 %}<span class="badge badge-gold">🔥 conf {{ p.ai_confidence }}%</span>
+              {% elif p.ai_confidence >= 65 %}<span class="badge badge-teal">conf {{ p.ai_confidence }}%</span>
+              {% endif %}
+            </div>
+            <span class="tc-result open">OPEN</span>
+          </div>
+          <div class="tc-question">{{ p.market_question[:120] }}{% if p.market_question|length > 120 %}…{% endif %}</div>
+          {% if p.thesis %}
+          <div class="tc-thesis">💡 {{ p.thesis[:120] }}</div>
+          {% endif %}
+          <div class="tc-stats">
+            <div class="tc-stat">
+              <div class="tc-stat-val" style="color:var(--nova-teal-l);">{{ "%.0f"|format(p.entry_price * 100) }}%</div>
+              <div class="tc-stat-lbl">Entrée</div>
+            </div>
+            <div class="tc-stat">
+              <div class="tc-stat-val" style="color:var(--nova-green);">{{ "%.0f"|format(p.estimated_prob * 100) }}%</div>
+              <div class="tc-stat-lbl">IA estime</div>
+            </div>
+            <div class="tc-stat">
+              <div class="tc-stat-val" style="color:var(--nova-gold);">{{ "%.2f"|format(p.size_usd) }}$</div>
+              <div class="tc-stat-lbl">Mise</div>
+            </div>
+            <div class="tc-stat">
+              <div class="tc-stat-val {% if (p.ev_usd or 0) > 0 %}text-green{% else %}text-red{% endif %}">{{ "%+.2f"|format(p.ev_usd or 0) }}$</div>
+              <div class="tc-stat-lbl">EV</div>
             </div>
           </div>
+          <div class="tc-progress-wrap">
+            <div class="tc-progress-label">
+              <span>Marché {{ "%.0f"|format(p.entry_price * 100) }}%</span>
+              <span>IA → {{ "%.0f"|format(p.estimated_prob * 100) }}%</span>
+              <span class="{% if (p.edge_at_entry or 0) >= 0.2 %}text-green{% else %}text-teal{% endif %}">edge {{ "%.0f"|format((p.edge_at_entry or 0) * 100) }}%</span>
+            </div>
+            <div class="tc-bar-track">
+              <div class="tc-bar-market" style="width:{{ "%.0f"|format(p.entry_price * 100) }}%;"></div>
+              <div class="tc-bar-ai {% if p.estimated_prob > p.entry_price %}up{% else %}down{% endif %}"
+                   style="width:{{ "%.0f"|format(p.estimated_prob * 100) }}%;opacity:.7;"></div>
+            </div>
+          </div>
+          {% if p.ai_reasoning %}
+          <div class="tc-reasoning"><strong>🤖 Analyse :</strong> {{ p.ai_reasoning[:200] }}{% if p.ai_reasoning|length > 200 %}…{% endif %}</div>
+          {% endif %}
+          {% if p.exit_trigger %}
+          <div class="tc-exit"><span class="tc-exit-icon">⏳</span><span><strong>En attente de :</strong> {{ p.exit_trigger[:150] }}</span></div>
           {% else %}
-          <div class="no-data" style="padding:1rem;"><div class="no-data-icon">📰</div><p>Aucune news analysée</p></div>
-          {% endfor %}
+          <div class="tc-exit"><span class="tc-exit-icon">📅</span><span>{{ "%.0f"|format(p.hours_to_close or 0) }}h avant fermeture</span></div>
+          {% endif %}
         </div>
+        {% endfor %}
       </div>
+      {% else %}
+      <div class="no-data"><div class="no-data-icon">🔍</div><p>Le bot analyse les marchés… les trades apparaîtront ici</p></div>
+      {% endif %}
     </div>
 
-    <!-- ── TRADE CARDS (pleine largeur) ── -->
-    <div class="span2">
-      <div class="tab-bar">
-        <button class="tab-btn active" onclick="switchTab('open',this)">
-          🟢 Ouvertes
-          {% if open_positions %}<span class="badge badge-teal" style="margin-left:.3rem;">{{ open_positions|length }}</span>{% endif %}
-        </button>
-        <button class="tab-btn" onclick="switchTab('closed',this)">
-          🏁 Historique
-          {% if closed_positions %}<span class="badge badge-muted" style="margin-left:.3rem;">{{ closed_positions|length }}</span>{% endif %}
-        </button>
-      </div>
-
-      <!-- Positions ouvertes -->
-      <div class="tab-panel active" id="tab-open">
-        {% if open_positions %}
-        <div class="trade-cards-grid">
-          {% for p in open_positions %}
-          {% set price_move = ((p.current_price or p.entry_price) - p.entry_price) %}
-          <div class="trade-card result-open">
-
-            <!-- Header -->
-            <div class="tc-header">
-              <div class="tc-badges">
-                <span class="badge {% if p.side == 'YES' %}badge-green{% else %}badge-red{% endif %}">{{ p.side }}</span>
-                <span class="badge badge-muted">{{ p.category }}</span>
-                {% if p.ai_confidence >= 80 %}<span class="badge badge-gold">🔥 conf {{ p.ai_confidence }}%</span>
-                {% elif p.ai_confidence >= 65 %}<span class="badge badge-teal">conf {{ p.ai_confidence }}%</span>
-                {% endif %}
-              </div>
-              <span class="tc-result open">OPEN</span>
+    <!-- Historique -->
+    <div class="tab-panel" id="tab-closed">
+      {% if closed_positions %}
+      <div class="trade-cards-grid">
+        {% for p in closed_positions %}
+        <div class="trade-card result-{{ p.result|lower }}">
+          <div class="tc-header">
+            <div class="tc-badges">
+              <span class="badge {% if p.side == 'YES' %}badge-green{% else %}badge-red{% endif %}">{{ p.side }}</span>
+              <span class="badge badge-muted">{{ p.category }}</span>
             </div>
-
-            <!-- Question -->
-            <div class="tc-question">{{ p.market_question[:120] }}{% if p.market_question|length > 120 %}…{% endif %}</div>
-
-            <!-- Thesis -->
-            {% if p.thesis %}
-            <div class="tc-thesis">💡 {{ p.thesis[:120] }}</div>
-            {% endif %}
-
-            <!-- Stats row -->
-            <div class="tc-stats">
-              <div class="tc-stat">
-                <div class="tc-stat-val" style="color:var(--nova-teal-l);">{{ "%.0f"|format(p.entry_price * 100) }}%</div>
-                <div class="tc-stat-lbl">Entrée</div>
-              </div>
-              <div class="tc-stat">
-                <div class="tc-stat-val" style="color:var(--nova-green);">{{ "%.0f"|format(p.estimated_prob * 100) }}%</div>
-                <div class="tc-stat-lbl">IA estime</div>
-              </div>
-              <div class="tc-stat">
-                <div class="tc-stat-val" style="color:var(--nova-gold);">{{ "%.2f"|format(p.size_usd) }}$</div>
-                <div class="tc-stat-lbl">Mise</div>
-              </div>
-              <div class="tc-stat">
-                <div class="tc-stat-val {% if (p.ev_usd or 0) > 0 %}text-green{% else %}text-red{% endif %}">{{ "%+.2f"|format(p.ev_usd or 0) }}$</div>
-                <div class="tc-stat-lbl">EV</div>
-              </div>
-            </div>
-
-            <!-- Barre probabilité -->
-            <div class="tc-progress-wrap">
-              <div class="tc-progress-label">
-                <span>Marché {{ "%.0f"|format(p.entry_price * 100) }}%</span>
-                <span>IA → {{ "%.0f"|format(p.estimated_prob * 100) }}%</span>
-                <span class="{% if (p.edge_at_entry or 0) >= 0.2 %}text-green{% else %}text-teal{% endif %}">edge {{ "%.0f"|format((p.edge_at_entry or 0) * 100) }}%</span>
-              </div>
-              <div class="tc-bar-track">
-                <div class="tc-bar-market" style="width:{{ "%.0f"|format(p.entry_price * 100) }}%;"></div>
-                <div class="tc-bar-ai {% if p.estimated_prob > p.entry_price %}up{% else %}down{% endif %}"
-                     style="width:{{ "%.0f"|format(p.estimated_prob * 100) }}%;opacity:.7;"></div>
-              </div>
-            </div>
-
-            <!-- Reasoning -->
-            {% if p.ai_reasoning %}
-            <div class="tc-reasoning">
-              <strong>🤖 Analyse :</strong> {{ p.ai_reasoning[:200] }}{% if p.ai_reasoning|length > 200 %}…{% endif %}
-            </div>
-            {% endif %}
-
-            <!-- Exit trigger -->
-            {% if p.exit_trigger %}
-            <div class="tc-exit">
-              <span class="tc-exit-icon">⏳</span>
-              <span><strong>En attente de :</strong> {{ p.exit_trigger[:150] }}</span>
-            </div>
-            {% else %}
-            <div class="tc-exit">
-              <span class="tc-exit-icon">📅</span>
-              <span>{{ "%.0f"|format(p.hours_to_close or 0) }}h avant fermeture du marché</span>
-            </div>
-            {% endif %}
-
+            <span class="tc-result {{ p.result|lower }}">
+              {% if p.result == 'WIN' %}🎯 WIN{% elif p.result == 'LOSS' %}💀 LOSS{% else %}{{ p.result }}{% endif %}
+            </span>
           </div>
-          {% endfor %}
-        </div>
-        {% else %}
-        <div class="no-data">
-          <div class="no-data-icon">🔍</div>
-          <p>Le bot analyse les marchés… les trades apparaîtront ici</p>
-        </div>
-        {% endif %}
-      </div>
-
-      <!-- Historique -->
-      <div class="tab-panel" id="tab-closed">
-        {% if closed_positions %}
-        <div class="trade-cards-grid">
-          {% for p in closed_positions %}
-          <div class="trade-card result-{{ p.result|lower }}">
-
-            <!-- Header -->
-            <div class="tc-header">
-              <div class="tc-badges">
-                <span class="badge {% if p.side == 'YES' %}badge-green{% else %}badge-red{% endif %}">{{ p.side }}</span>
-                <span class="badge badge-muted">{{ p.category }}</span>
-              </div>
-              <span class="tc-result {{ p.result|lower }}">
-                {% if p.result == 'WIN' %}🎯 WIN{% elif p.result == 'LOSS' %}💀 LOSS{% else %}{{ p.result }}{% endif %}
-              </span>
+          <div class="tc-question">{{ p.market_question[:120] }}{% if p.market_question|length > 120 %}…{% endif %}</div>
+          {% if p.thesis %}<div class="tc-thesis">💡 {{ p.thesis[:100] }}</div>{% endif %}
+          <div class="tc-stats">
+            <div class="tc-stat"><div class="tc-stat-val">{{ "%.2f"|format(p.size_usd) }}$</div><div class="tc-stat-lbl">Mise</div></div>
+            <div class="tc-stat"><div class="tc-stat-val">{{ "%.0f"|format(p.entry_price * 100) }}%</div><div class="tc-stat-lbl">Entrée</div></div>
+            <div class="tc-stat">
+              <div class="tc-stat-val {% if (p.pnl_usd or 0) >= 0 %}text-green{% else %}text-red{% endif %}" style="font-size:1rem;">{{ "%+.2f"|format(p.pnl_usd or 0) }}$</div>
+              <div class="tc-stat-lbl">PnL</div>
             </div>
-
-            <!-- Question -->
-            <div class="tc-question">{{ p.market_question[:120] }}{% if p.market_question|length > 120 %}…{% endif %}</div>
-
-            <!-- Thesis -->
-            {% if p.thesis %}
-            <div class="tc-thesis">💡 {{ p.thesis[:100] }}</div>
-            {% endif %}
-
-            <!-- Stats -->
-            <div class="tc-stats">
-              <div class="tc-stat">
-                <div class="tc-stat-val">{{ "%.2f"|format(p.size_usd) }}$</div>
-                <div class="tc-stat-lbl">Mise</div>
-              </div>
-              <div class="tc-stat">
-                <div class="tc-stat-val">{{ "%.0f"|format(p.entry_price * 100) }}%</div>
-                <div class="tc-stat-lbl">Entrée</div>
-              </div>
-              <div class="tc-stat">
-                <div class="tc-stat-val {% if (p.pnl_usd or 0) >= 0 %}text-green{% else %}text-red{% endif %}" style="font-size:1rem;">
-                  {{ "%+.2f"|format(p.pnl_usd or 0) }}$
-                </div>
-                <div class="tc-stat-lbl">PnL</div>
-              </div>
-              <div class="tc-stat">
-                <div class="tc-stat-val">{{ p.ai_confidence }}%</div>
-                <div class="tc-stat-lbl">Conf IA</div>
-              </div>
-            </div>
-
-            <!-- Reasoning -->
-            {% if p.ai_reasoning %}
-            <div class="tc-reasoning">
-              <strong>🤖 Analyse :</strong> {{ p.ai_reasoning[:180] }}{% if p.ai_reasoning|length > 180 %}…{% endif %}
-            </div>
-            {% endif %}
-
-            <div class="tc-exit">
-              <span class="tc-exit-icon">📅</span>
-              <span>{{ p.timestamp.strftime('%d/%m/%Y %H:%M') }}</span>
-            </div>
+            <div class="tc-stat"><div class="tc-stat-val">{{ p.ai_confidence }}%</div><div class="tc-stat-lbl">Conf IA</div></div>
           </div>
-          {% endfor %}
+          {% if p.ai_reasoning %}<div class="tc-reasoning"><strong>🤖 Analyse :</strong> {{ p.ai_reasoning[:180] }}{% if p.ai_reasoning|length > 180 %}…{% endif %}</div>{% endif %}
+          <div class="tc-exit"><span class="tc-exit-icon">📅</span><span>{{ p.timestamp.strftime('%d/%m/%Y %H:%M') }}</span></div>
         </div>
-        {% else %}
-        <div class="no-data"><div class="no-data-icon">🏁</div><p>Aucun trade clôturé pour l'instant</p></div>
-        {% endif %}
+        {% endfor %}
       </div>
-    </div>
-
-  </div><!-- /main-grid -->
-
-  <!-- Bottom bar -->
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-top:.75rem;flex-wrap:wrap;gap:.5rem;">
-    <div id="ai-status-bar" style="font-size:.72rem;display:flex;align-items:center;gap:.5rem;">
-      <span style="color:var(--nova-muted);">IA :</span>
-      <span id="ai-ollama" class="badge badge-muted">Ollama …</span>
-      <span id="ai-pplx"   class="badge badge-muted">Perplexity …</span>
-    </div>
-    <div style="font-size:.75rem;color:var(--nova-muted);">
-      {% if cred and cred.verified_at %}Wallet : <span class="text-teal" id="balance-val">…</span> USDC{% endif %}
+      {% else %}
+      <div class="no-data"><div class="no-data-icon">🏁</div><p>Aucun trade clôturé pour l'instant</p></div>
+      {% endif %}
     </div>
   </div>
 
@@ -526,13 +494,26 @@
 
 <script>
   let lastActId = {% if activities %}{{ activities[0].id }}{% else %}0{% endif %};
+  let allNewsItems = [];
+  let newsCount = {{ recent_news|length }};
 
+  /* ── Couleur source ── */
+  function sourceClass(src) {
+    const s = src.toLowerCase();
+    if (s.includes('bbc')||s.includes('reuters')||s.includes('politic')||s.includes('ap news')) return 'pol';
+    if (s.includes('coindesk')||s.includes('cointelegraph')||s.includes('decrypt')||s.includes('crypto')) return 'cryp';
+    if (s.includes('espn')||s.includes('sport')||s.includes('nfl')||s.includes('nba')) return 'sprt';
+    if (s.includes('techcrunch')||s.includes('verge')||s.includes('wired')) return 'tech';
+    if (s.includes('variety')||s.includes('tmz')||s.includes('deadline')||s.includes('billboard')) return 'ent';
+    return '';
+  }
+
+  /* ── Poll activité ── */
   function pollActivity() {
     fetch('/api/activity?since=' + lastActId).then(r=>r.json()).then(data => {
       const feed = document.getElementById('activity-feed');
       if (data.entries && data.entries.length > 0) {
-        const nd = feed.querySelector('.no-data');
-        if (nd) nd.remove();
+        const nd = feed.querySelector('.no-data'); if (nd) nd.remove();
         data.entries.forEach(e => {
           const row = document.createElement('div');
           row.className = 'act-row ' + e.level;
@@ -545,6 +526,61 @@
     }).catch(()=>{});
   }
 
+  /* ── Poll news RSS ── */
+  function pollNews() {
+    fetch('/api/news').then(r=>r.json()).then(d=>{
+      if (!d.news || !d.news.length) return;
+      const stream = document.getElementById('news-stream');
+      const empty  = document.getElementById('news-empty');
+      if (empty) empty.remove();
+
+      // Nouvelles entrées seulement (on compare le count)
+      if (d.news.length !== newsCount) {
+        newsCount = d.news.length;
+        // Vider et reconstruire (les plus récentes d'abord)
+        stream.innerHTML = '';
+        allNewsItems = d.news;
+        d.news.forEach(n => stream.appendChild(makeNewsItem(n)));
+        document.getElementById('news-counter').textContent = d.news.length + ' articles';
+        applyFilter();
+      }
+    }).catch(()=>{});
+  }
+
+  function makeNewsItem(n) {
+    const item = document.createElement('div');
+    item.className = 'ns-item';
+    item.setAttribute('data-signals', n.signals_gen || 0);
+    item.setAttribute('data-relevance', n.relevance || 0);
+    const src = (n.source||'').substring(0,10);
+    const sc  = sourceClass(n.source||'');
+    const sig = n.signals_gen > 0 ? '<span class="ns-signal">⚡ '+n.signals_gen+' signal'+(n.signals_gen>1?'s':'')+'</span>' : '';
+    const rel = n.relevance > 0 ? '<span class="ns-score">📊 '+n.relevance+'</span>' : '';
+    item.innerHTML =
+      '<span class="ns-source '+sc+'">'+escHtml(src)+'</span>'+
+      '<div class="ns-body">'+
+        '<div class="ns-title">'+escHtml((n.title||'').substring(0,120))+((n.title||'').length>120?'…':'')+'</div>'+
+        '<div class="ns-meta"><span>'+escHtml(n.timestamp||'')+'</span>'+rel+sig+'</div>'+
+      '</div>';
+    return item;
+  }
+
+  function filterNews() {
+    applyFilter();
+  }
+  function applyFilter() {
+    const val   = document.getElementById('news-filter').value;
+    const items = document.querySelectorAll('#news-stream .ns-item');
+    items.forEach(item => {
+      const sig = parseInt(item.getAttribute('data-signals')||0);
+      const rel = parseInt(item.getAttribute('data-relevance')||0);
+      if (val === 'signal')   item.style.display = sig > 0 ? '' : 'none';
+      else if (val === 'relevant') item.style.display = rel > 0 ? '' : 'none';
+      else item.style.display = '';
+    });
+  }
+
+  /* ── Poll balance ── */
   function pollBalance() {
     fetch('/api/balance').then(r=>r.json()).then(d=>{
       const el=document.getElementById('balance-val');
@@ -552,22 +588,7 @@
     }).catch(()=>{});
   }
 
-  function pollNews() {
-    fetch('/api/news').then(r=>r.json()).then(d=>{
-      if(!d.news||!d.news.length) return;
-      const list=document.getElementById('news-list');
-      const nd=list.querySelector('.no-data'); if(nd) nd.remove();
-      list.innerHTML='';
-      d.news.forEach(n=>{
-        const item=document.createElement('div'); item.className='news-item';
-        const sigs=n.signals_gen>0?'<span class="text-green">'+n.signals_gen+' signal(s)</span>':'';
-        const rel=n.relevance>0?'<span class="text-teal">score '+n.relevance+'</span>':'';
-        item.innerHTML='<div class="news-item-title">'+escHtml(n.title.substring(0,85))+(n.title.length>85?'…':'')+'</div><div class="news-item-meta"><span>'+escHtml(n.source)+'</span><span>'+n.timestamp+'</span>'+rel+sigs+'</div>';
-        list.appendChild(item);
-      });
-    }).catch(()=>{});
-  }
-
+  /* ── Poll AI status ── */
   function pollAIStatus() {
     fetch('/api/ai-status').then(r=>r.json()).then(d=>{
       const oe=document.getElementById('ai-ollama');
@@ -585,30 +606,30 @@
       else { alert('Erreur: '+d.error); btn.disabled=false; btn.textContent='▶ Démarrer'; }
     }).catch(()=>{ btn.disabled=false; btn.textContent='▶ Démarrer'; });
   }
-
   function botStop() {
     if(!confirm('Arrêter le bot ?')) return;
     const btn=document.getElementById('stop-btn');
     btn.disabled=true; btn.textContent='…';
     fetch('/bot/stop',{method:'POST'}).then(()=>location.reload()).catch(()=>location.reload());
   }
-
   function switchTab(name, btn) {
     document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
     document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
     btn.classList.add('active');
     document.getElementById('tab-'+name).classList.add('active');
   }
-
   function escHtml(t) {
     return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
   pollBalance(); pollAIStatus();
   setInterval(pollAIStatus, 60000);
+  // News poll même quand bot arrêté (les flux tournent indépendamment)
+  pollNews();
+  setInterval(pollNews, 12000);
+
   if ({{ 'true' if is_running else 'false' }}) {
     setInterval(pollActivity, 4000);
-    setInterval(pollNews,     15000);
     setInterval(pollBalance,  30000);
   }
 </script>
