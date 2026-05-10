@@ -135,7 +135,7 @@ class Article:
 
 class NewsEngine:
     """
-    Aggrège toutes les sources RSS, dédoublonne par URL hash,
+    Aggrège toutes les sources RSS, dédoublonne par URL hash et titre,
     maintient un buffer des N derniers articles.
     Thread-safe.
     """
@@ -144,6 +144,7 @@ class NewsEngine:
 
     def __init__(self):
         self._articles: dict[str, Article] = {}   # uid -> Article
+        self._titles_seen: set[str] = set()       # pour déduplier par titre
         self._lock = threading.Lock()
         self._new_since: list[str] = []           # uids non encore traités
         self._last_refresh = 0.0
@@ -177,8 +178,14 @@ class NewsEngine:
                             pass
                     art = Article(name, title, summary, link, pub)
                     with self._lock:
-                        if art.uid not in self._articles:
+                        # Déduplique par URL hash ET par titre normalisé
+                        title_norm = title.lower().strip()
+                        is_duplicate = (art.uid in self._articles or
+                                       title_norm in self._titles_seen)
+
+                        if not is_duplicate:
                             self._articles[art.uid] = art
+                            self._titles_seen.add(title_norm)
                             if art.score >= self.MIN_SCORE:
                                 self._new_since.append(art.uid)
                             new_count += 1
@@ -188,8 +195,11 @@ class NewsEngine:
         with self._lock:
             if len(self._articles) > self.MAX_BUFFER:
                 oldest = sorted(self._articles.values(), key=lambda a: a.published)
-                for old in oldest[:len(self._articles) - self.MAX_BUFFER]:
+                to_remove = oldest[:len(self._articles) - self.MAX_BUFFER]
+                for old in to_remove:
                     self._articles.pop(old.uid, None)
+                    # Nettoyer aussi les titres_seen
+                    self._titles_seen.discard(old.title.lower().strip())
         self._last_refresh = time.time()
         self._stats["total_fetched"] += new_count
         logger.info(f"[News] refresh +{new_count} articles ({len(self._articles)} total)")
