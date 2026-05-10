@@ -382,7 +382,9 @@ def _register_routes(app):
     @app.route("/api/news")
     @login_required
     def api_news():
+        uid = session["user_id"]
         news = (NewsLog.query
+                .filter_by(user_id=uid)
                 .order_by(NewsLog.timestamp.desc())
                 .limit(50).all())
         return jsonify({"news": [n.to_dict() for n in news]})

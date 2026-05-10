@@ -171,12 +171,15 @@ class NewsLog(db.Model):
     """Articles analysés récemment."""
     __tablename__ = "news_logs"
     id          = db.Column(db.Integer, primary_key=True)
+    user_id     = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     timestamp   = db.Column(db.DateTime, default=datetime.utcnow)
     source      = db.Column(db.String(50), nullable=False)
     title       = db.Column(db.Text, nullable=False)
     url         = db.Column(db.Text, nullable=True)
     relevance   = db.Column(db.Integer, default=0)
     signals_gen = db.Column(db.Integer, default=0)   # nb de signaux générés
+
+    user = db.relationship("User", backref=db.backref("news_logs"))
 
     def to_dict(self):
         return {

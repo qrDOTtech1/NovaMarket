@@ -242,14 +242,15 @@ class MarketWorker(threading.Thread):
         for art in articles:
             try:
                 sig_count = sum(1 for s in signals if s["article_title"] == art.title)
-                nl = NewsLog(source=art.source, title=art.title,
+                nl = NewsLog(user_id=self.user_id, source=art.source, title=art.title,
                              url=art.url, relevance=art.score, signals_gen=sig_count)
                 db.session.add(nl)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning(f"[NM] NewsLog insert error: {e}")
         try:
             db.session.commit()
-        except Exception:
+        except Exception as e:
+            logger.error(f"[NM] NewsLog commit error: {e}")
             db.session.rollback()
 
         if not signals:
