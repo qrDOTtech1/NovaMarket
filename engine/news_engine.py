@@ -246,6 +246,38 @@ class NewsEngine:
             self._new_since = remaining
             return unprocessed
 
+    def find_articles_for_market(self, market_question: str, top_n: int = 3) -> list:
+        """
+        Cherche les articles RSS les plus corrélés à une question de marché.
+        Matching par mots-clés communs entre la question et titre/résumé.
+        Retourne les top_n articles les plus pertinents.
+        """
+        import re
+        # Tokens significatifs de la question (>3 lettres, sans mots vides)
+        STOP = {"will","the","and","for","that","this","with","from","are",
+                "have","has","was","were","been","into","than","then","its",
+                "can","not","but","all","over","when","what","who","how","why",
+                "des","les","une","est","sur","par","dans","qui","que","pour",
+                "pas","plus","avec","même","tout","fait","mais","si","ou","où"}
+        q_tokens = {w for w in re.findall(r'[a-z]{4,}', market_question.lower())
+                    if w not in STOP}
+        if not q_tokens:
+            return []
+
+        scored = []
+        with self._lock:
+            for art in self._articles.values():
+                text = (art.title + " " + art.summary).lower()
+                overlap = sum(1 for t in q_tokens if t in text)
+                if overlap > 0:
+                    # Bonus si le titre seul contient des tokens (plus précis)
+                    title_bonus = sum(1 for t in q_tokens if t in art.title.lower())
+                    score = overlap + title_bonus * 0.5
+                    scored.append((score, art))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [art for _, art in scored[:top_n]]
+
     def latest(self, n: int = 20, min_score: int = 1) -> list:
         with self._lock:
             arts = [a for a in self._articles.values() if a.score >= min_score]

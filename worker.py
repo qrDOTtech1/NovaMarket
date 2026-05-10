@@ -23,9 +23,10 @@ logger = logging.getLogger(__name__)
 # Cache partagé marchés (user_id → liste) — lisible depuis app.py
 MARKETS_CACHE: dict = {}
 
-NEWS_INTERVAL     = 60    # refresh RSS toutes les 60s
-POSITION_INTERVAL = 120   # check positions ouvertes toutes les 2min
-MARKET_INTERVAL   = 300   # refresh liste marchés toutes les 5min
+NEWS_INTERVAL          = 60    # refresh RSS toutes les 60s
+POSITION_INTERVAL      = 120   # check positions ouvertes toutes les 2min
+MARKET_INTERVAL        = 300   # refresh liste marchés toutes les 5min
+MARKET_SIGNAL_INTERVAL = 180   # cycle marché→news toutes les 3min
 
 
 SIM_BANKROLL = 50.0   # bankroll virtuel en mode simulation
@@ -40,9 +41,10 @@ class MarketWorker(threading.Thread):
         self._stop      = threading.Event()
         self._news      = NewsEngine()
         self._markets   = []
-        self._last_markets_refresh = 0.0
-        self._last_news_refresh    = 0.0
-        self._last_pos_check       = 0.0
+        self._last_markets_refresh     = 0.0
+        self._last_news_refresh        = 0.0
+        self._last_pos_check           = 0.0
+        self._last_market_signal_cycle = 0.0
         # Marchés analysés cette session (market_id) — jamais retestés par Perplexity
         self._analyzed_this_session: set = set()
 
@@ -163,10 +165,15 @@ class MarketWorker(threading.Thread):
                     self._refresh_markets(client)
                     self._last_markets_refresh = now
 
-                # Refresh news + analyse
+                # Refresh news + analyse (article → marchés)
                 if now - self._last_news_refresh > NEWS_INTERVAL:
                     self._news_cycle(client, bankroll, cb)
                     self._last_news_refresh = now
+
+                # Cycle marché → news RSS corrélées (chaque marché → signal)
+                if now - self._last_market_signal_cycle > MARKET_SIGNAL_INTERVAL:
+                    self._market_signal_cycle(client, bankroll, cb)
+                    self._last_market_signal_cycle = now
 
                 # Check positions ouvertes
                 if now - self._last_pos_check > POSITION_INTERVAL:
@@ -285,6 +292,119 @@ class MarketWorker(threading.Thread):
             if active_count >= MAX_ACTIVE_POSITIONS:
                 self._log("warning", "⚠️", "Max positions actives atteint")
                 break
+            ok, cb_reason = CircuitBreaker.can_trade(self.user_id)
+            if not ok:
+                self._log("warning", "🚫", f"CB bloque: {cb_reason}")
+                break
+            self._execute_signal(sig, client, bankroll, cb, active_count)
+            active_count += 1
+
+    # ── Cycle marché → corrélation RSS → signal ───────────────────────────────
+
+    def _market_signal_cycle(self, client: PolyMarketClient, bankroll: float, cb):
+        """
+        Sens inverse du _news_cycle : pour chaque marché actif non encore analysé,
+        cherche les articles RSS corrélés et génère un signal si edge suffisant.
+        Garantit qu'AUCUN marché n'est ignoré faute d'article qui le mentionne.
+        """
+        from engine.ai_analyst import estimate_probability, AIUnavailableError
+
+        if not self._markets:
+            return
+
+        # Marchés non encore analysés cette session
+        unanalyzed = [
+            m for m in self._markets
+            if m.get("conditionId", m.get("condition_id", ""))
+               not in self._analyzed_this_session
+        ]
+        if not unanalyzed:
+            self._log("info", "✅", "Tous les marchés déjà analysés cette session")
+            return
+
+        self._log("info", "🔭",
+                  f"Cycle marché→RSS : {len(unanalyzed)} marchés non analysés "
+                  f"sur {len(self._markets)} actifs")
+
+        active_count = Position.query.filter_by(
+            user_id=self.user_id, result="OPEN"
+        ).count()
+
+        signals = []
+        for market in unanalyzed[:20]:   # max 20 marchés par cycle
+            mid      = market.get("conditionId", market.get("condition_id", ""))
+            question = market.get("question", market.get("title", ""))
+            current_prob = market.get("_yes_price", 0.5)
+
+            # Trouver les articles RSS les plus corrélés
+            correlated = self._news.find_articles_for_market(question, top_n=2)
+
+            if correlated:
+                best_art = correlated[0]
+                art_title   = best_art.title
+                art_summary = best_art.summary
+                art_source  = best_art.source
+                self._log("info", "🔗",
+                          f"Corrélation : [{question[:55]}…] "
+                          f"← '{best_art.title[:50]}…' ({best_art.source})")
+            else:
+                # Pas d'article RSS corrélé → analyser quand même sans contexte news
+                art_title   = question
+                art_summary = f"Marché Polymarket actif : {question}"
+                art_source  = "polymarket"
+
+            # Bloquer ce marché dès maintenant (qu'on génère un signal ou non)
+            if mid:
+                self._analyzed_this_session.add(mid)
+
+            try:
+                analysis = estimate_probability(art_title, art_summary, question, current_prob)
+            except AIUnavailableError as e:
+                self._log("error", "🚫", f"IA indisponible: {e}")
+                break
+            except Exception as e:
+                logger.warning(f"[NM] market_signal_cycle estimate error: {e}")
+                continue
+
+            estimated = analysis["estimated_prob"]
+            edge      = abs(estimated - current_prob)
+            conf      = analysis["confidence"]
+
+            self._log("info", "📡",
+                      f"[{question[:50]}…] mkt={current_prob:.0%} → IA={estimated:.0%} "
+                      f"edge={edge:.0%} conf={conf}%"
+                      + (f" | news: {art_source}" if art_source != "polymarket" else ""))
+
+            if edge < 0.12 or conf < 60:
+                continue
+
+            side       = "YES" if estimated > current_prob else "NO"
+            side_price = current_prob if side == "YES" else (1 - current_prob)
+
+            signals.append({
+                "market":         market,
+                "article_title":  art_title,
+                "article_source": art_source,
+                "current_prob":   current_prob,
+                "estimated_prob": estimated,
+                "edge":           round(edge, 4),
+                "confidence":     conf,
+                "direction":      analysis.get("direction", ""),
+                "reasoning":      analysis.get("reasoning", ""),
+                "exit_trigger":   analysis.get("exit_trigger", ""),
+                "thesis":         analysis.get("thesis", ""),
+                "side":           side,
+                "entry_price":    side_price,
+            })
+
+        if not signals:
+            self._log("info", "🔍", "Cycle marché→RSS : aucun signal suffisant")
+            return
+
+        self._log("info", "💡",
+                  f"Cycle marché→RSS : {len(signals)} signal(s) → risk engine…")
+
+        for sig in signals:
             ok, cb_reason = CircuitBreaker.can_trade(self.user_id)
             if not ok:
                 self._log("warning", "🚫", f"CB bloque: {cb_reason}")
