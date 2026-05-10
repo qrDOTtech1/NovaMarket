@@ -33,9 +33,9 @@ OLLAMA_TIMEOUT = 15
 # ── Config Perplexity ─────────────────────────────────────────────────────────
 PERPLEXITY_API_KEY = os.environ.get("PERPLEXITY_API_KEY", "")
 PERPLEXITY_URL  = "https://api.perplexity.ai/chat/completions"
-PPLX_FAST_MODEL = "llama-3.1-sonar-small-128k-online"   # classify / match
-PPLX_SMART_MODEL= "llama-3.1-sonar-large-128k-online"   # estimate_prob (web search)
-PPLX_TIMEOUT    = 20
+PPLX_FAST_MODEL = "sonar"       # classify + match marchés (rapide, économique)
+PPLX_SMART_MODEL= "sonar-pro"   # estimate_probability (web search temps réel ✅)
+PPLX_TIMEOUT    = 30
 
 
 # ── Runtime config (surchargé par worker depuis DB) ───────────────────────────
@@ -316,16 +316,18 @@ def find_relevant_markets(article_title: str, article_summary: str,
     prompt = (
         f"Article: {article_title[:200]}\n"
         f"Résumé: {article_summary[:300]}\n\n"
-        f"Marchés de prédiction:\n{market_list}\n"
-        f"Quels marchés (max {top_n}) sont directement impactés par cet article ?\n"
-        f'Retourne UNIQUEMENT: {{"relevant": [0, 3, 7]}} (indices, rien d\'autre)'
+        f"Marchés:\n{market_list}\n"
+        f"Donne les indices (max {top_n}) des marchés directement impactés.\n"
+        f"Réponds UNIQUEMENT avec ce JSON (indices entre crochets): "
+        f'{{\"relevant\": [0, 1]}}'
     )
-    raw    = _call_fast(prompt, max_tokens=80)
+    raw    = _call_fast(prompt, max_tokens=50)
     result = _parse_json(raw)
     if not result:
         return []
     indices = result.get("relevant", [])
-    return [markets[i] for i in indices if isinstance(i, int) and i < len(markets)]
+    # Sécurité : filtrer les indices non-entiers ou hors bornes
+    return [markets[i] for i in indices if isinstance(i, int) and 0 <= i < len(markets)]
 
 
 def estimate_probability(article_title: str, article_summary: str,
@@ -337,24 +339,20 @@ def estimate_probability(article_title: str, article_summary: str,
     """
     system = (
         "Tu es un analyste expert en marchés de prédiction (Polymarket). "
-        "Tu as accès à Internet pour vérifier les faits actuels. "
-        "Sois précis, conservateur et basé sur les données. "
-        "Si tu n'es pas sûr, confidence < 50."
+        "Tu as accès à Internet — utilise-le pour vérifier les faits actuels. "
+        "Réponds UNIQUEMENT en JSON valide. Pas d'explication, juste le JSON."
     )
     prompt = (
-        f"MARCHÉ POLYMARKET: {market_question[:250]}\n"
-        f"Prix actuel (probabilité marché): {current_prob:.1%}\n\n"
+        f"MARCHÉ: {market_question[:250]}\n"
+        f"Probabilité marché actuelle: {current_prob:.1%}\n\n"
         f"ACTUALITÉ:\nTitre: {article_title[:200]}\n"
-        f"Résumé: {article_summary[:500]}\n\n"
-        "Analyse l'impact de cette actualité sur ce marché. "
-        "Recherche des informations récentes si nécessaire.\n\n"
-        "Réponds UNIQUEMENT avec ce JSON:\n"
-        '{"estimated_prob":0.72,"confidence":75,"reasoning":"explication courte en 1-2 phrases","direction":"UP"}\n\n'
-        "estimated_prob: probabilité réelle estimée (0.01 à 0.99)\n"
-        "confidence: ta certitude (0-100). Sois conservateur.\n"
+        f"Résumé: {article_summary[:400]}\n\n"
+        "Recherche les dernières infos sur ce sujet et analyse l'impact.\n"
+        "Réponds avec exactement ce JSON:\n"
+        "{\"estimated_prob\":0.72,\"confidence\":75,\"reasoning\":\"une phrase\",\"direction\":\"UP\"}\n\n"
+        "estimated_prob: 0.01 à 0.99 | confidence: 0-100 (conservateur si incertain) | "
         "direction: UP | DOWN | NEUTRAL\n"
-        "RÈGLE: edge minimum 10% pour justifier un trade. Si edge < 10%, "
-        "mets estimated_prob proche de current_prob et confidence < 40."
+        "Si edge < 10% vs probabilité marché, mets confidence < 40."
     )
     raw    = _call_smart(prompt, system=system, max_tokens=350)
     result = _parse_json(raw)
