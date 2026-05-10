@@ -112,10 +112,11 @@ class Article:
         self.title     = title
         self.summary   = summary
         self.url       = url
-        self.published = published or datetime.now(timezone.utc)
+        self.published = published or datetime.now(timezone.utcnow())
         self.uid       = hashlib.md5(url.encode()).hexdigest()
         self.score     = self._score()
         self.full_text = ""
+        self.processed = False  # Marqueur pour éviter les réanalyses
 
     def _score(self) -> int:
         text = (self.title + " " + self.summary).lower()
@@ -154,7 +155,7 @@ class NewsEngine:
         for name, url in RSS_FEEDS.items():
             try:
                 feed = feedparser.parse(url)
-                for entry in feed.entries[:20]:  # 20 derniers par source
+                for entry in feed.entries[:8]:  # Réduit : 20 → 8 par source (évite surcharge)
                     title   = getattr(entry, "title", "").strip()
                     summary = getattr(entry, "summary", "") or getattr(entry, "description", "")
                     link    = getattr(entry, "link", "")
@@ -195,11 +196,31 @@ class NewsEngine:
         return new_count
 
     def pop_new(self, max_items: int = 30) -> list:
-        """Retourne et vide la liste des nouveaux articles pertinents."""
+        """
+        Retourne les nouveaux articles pertinents (non encore traités).
+        Les marque comme processed pour éviter les réanalyses.
+        """
         with self._lock:
-            uids = self._new_since[:max_items]
-            self._new_since = self._new_since[max_items:]
-            return [self._articles[u] for u in uids if u in self._articles]
+            # Récupère les articles non-traités parmi _new_since
+            unprocessed = []
+            remaining = []
+            for uid in self._new_since:
+                if uid in self._articles:
+                    art = self._articles[uid]
+                    if not art.processed and len(unprocessed) < max_items:
+                        unprocessed.append(art)
+                    else:
+                        remaining.append(uid)
+                else:
+                    remaining.append(uid)
+
+            # Marquer les articles retournés comme processed
+            for art in unprocessed:
+                art.processed = True
+
+            # Garder les uids non-traités pour le prochain appel
+            self._new_since = remaining
+            return unprocessed
 
     def latest(self, n: int = 20, min_score: int = 1) -> list:
         with self._lock:
