@@ -14,38 +14,45 @@ from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
 
-# ── Sources RSS — couverture maximale ────────────────────────────────────────
+# ── Sources RSS — testées et validées ───────────────────────────────────────
+# Dernière vérification : 2026-05-10
 RSS_FEEDS = {
-    # Actualités générales
-    "reuters_top":    "https://feeds.reuters.com/reuters/topNews",
-    "reuters_world":  "https://feeds.reuters.com/Reuters/worldNews",
-    "reuters_us":     "https://feeds.reuters.com/Reuters/domesticNews",
-    "bbc_world":      "http://feeds.bbci.co.uk/news/world/rss.xml",
-    "bbc_us":         "http://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml",
-    "guardian_world": "https://www.theguardian.com/world/rss",
-    "ap_top":         "https://feeds.apnews.com/rss/apf-topnews",
-    "ap_politics":    "https://feeds.apnews.com/rss/apf-politics",
-    "ap_business":    "https://feeds.apnews.com/rss/apf-business",
+    # ── Actualités mondiales ──────────────────────────────────────────────────
+    "bbc_world":      "https://feeds.bbci.co.uk/news/world/rss.xml",       # ✅ 33 art
+    "bbc_politics":   "https://feeds.bbci.co.uk/news/politics/rss.xml",    # ✅ 60 art
+    "bbc_sport":      "https://feeds.bbci.co.uk/sport/rss.xml",            # ✅
+    "guardian_world": "https://www.theguardian.com/world/rss",             # ✅ 45 art
+    "al_jazeera":     "https://www.aljazeera.com/xml/rss/all.xml",         # ✅ 25 art
+    "sky_news":       "https://feeds.skynews.com/feeds/rss/world.xml",     # ✅ 10 art
+    "nyt_world":      "https://rss.nytimes.com/services/xml/rss/nyt/World.xml",     # ✅ 55 art
+    "nyt_politics":   "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml",  # ✅ 20 art
 
-    # Politique US (Polymarket très actif là-dessus)
-    "politico":       "https://www.politico.com/rss/politicopicks.xml",
-    "axios_politics": "https://api.axios.com/feed/",
-    "hill":           "https://thehill.com/rss/syndicator/19110",
-    "npr_politics":   "https://feeds.npr.org/1014/rss.xml",
+    # ── Politique US (Polymarket très actif) ─────────────────────────────────
+    "politico":       "https://rss.politico.com/politics-news.xml",        # ✅ 30 art
+    "axios":          "https://api.axios.com/feed/",                       # ✅ 100 art
+    "the_hill":       "https://thehill.com/feed/",                         # ✅ 100 art
+    "npr_news":       "https://feeds.npr.org/1001/rss.xml",                # ✅ 10 art
+    "fivethirtyeight":"https://fivethirtyeight.com/features/feed/",        # ✅ 20 art
 
-    # Crypto / Finance (marchés Polymarket crypto)
-    "cointelegraph":  "https://cointelegraph.com/rss",
-    "coindesk":       "https://www.coindesk.com/arc/outboundfeeds/rss/",
-    "decrypt":        "https://decrypt.co/feed",
-    "theblock":       "https://www.theblock.co/rss.xml",
+    # ── Crypto / Web3 ────────────────────────────────────────────────────────
+    "cointelegraph":  "https://cointelegraph.com/rss",                     # ✅ 30 art
+    "coindesk":       "https://www.coindesk.com/arc/outboundfeeds/rss/",   # ✅ 25 art
+    "decrypt":        "https://decrypt.co/feed",                           # ✅ 38 art
+    "theblock":       "https://www.theblock.co/rss.xml",                   # ✅ 20 art
+    "cryptoslate":    "https://cryptoslate.com/feed/",                     # ✅ 10 art
+    "cryptonews":     "https://cryptonews.com/news/feed/",                 # ✅ 20 art
+    "beincrypto":     "https://beincrypto.com/feed/",                      # ✅ 12 art
 
-    # Science / Tech
-    "techcrunch":     "https://techcrunch.com/feed/",
-    "ars_technica":   "https://feeds.arstechnica.com/arstechnica/index",
+    # ── Finance / Marchés ────────────────────────────────────────────────────
+    "bloomberg":      "https://feeds.bloomberg.com/markets/news.rss",      # ✅ 30 art
+    "yahoo_finance":  "https://finance.yahoo.com/news/rssindex",           # ✅ 50 art
+    "cnbc":           "https://www.cnbc.com/id/100003114/device/rss/rss.html", # ✅ 30 art
+    "marketwatch":    "https://feeds.marketwatch.com/marketwatch/topstories/", # ✅ 10 art
+    "ft":             "https://www.ft.com/rss/home",                       # ✅  9 art
 
-    # Sports (marchés sportifs Polymarket)
-    "espn":           "https://www.espn.com/espn/rss/news",
-    "bbc_sport":      "http://feeds.bbci.co.uk/sport/rss.xml",
+    # ── Sports ───────────────────────────────────────────────────────────────
+    "cbs_sports":     "https://www.cbssports.com/rss/headlines/",          # ✅ 36 art
+    "sporting_news":  "https://www.sportingnews.com/us/rss",               # ✅ 20 art
 }
 
 # Mots-clés Polymarket — augmentent le score de pertinence d'un article

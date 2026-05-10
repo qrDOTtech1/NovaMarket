@@ -23,12 +23,15 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# ── Config Ollama Cloud (env vars = fallback si DB non dispo) ─────────────────
-OLLAMA_URL     = os.environ.get("OLLAMA_URL",     "")
+# ── Config Ollama Cloud ───────────────────────────────────────────────────────
+# URL testée : https://api.ollama.com
+# Fast recommandé  : rnj-1:8b      (0.7s, JSON propre)
+# Smart recommandé : qwen3-next:80b (10s, JSON parfait + raisonnement)
+OLLAMA_URL     = os.environ.get("OLLAMA_URL",     "https://api.ollama.com")
 OLLAMA_API_KEY = os.environ.get("OLLAMA_API_KEY", "")
-OLLAMA_FAST    = os.environ.get("OLLAMA_FAST",    "")
-OLLAMA_SMART   = os.environ.get("OLLAMA_SMART",   "")
-OLLAMA_TIMEOUT = 15
+OLLAMA_FAST    = os.environ.get("OLLAMA_FAST",    "rnj-1:8b")
+OLLAMA_SMART   = os.environ.get("OLLAMA_SMART",   "qwen3-next:80b")
+OLLAMA_TIMEOUT = 20
 
 # ── Config Perplexity ─────────────────────────────────────────────────────────
 PERPLEXITY_API_KEY = os.environ.get("PERPLEXITY_API_KEY", "")
@@ -64,9 +67,12 @@ def _get_model_smart()    -> str: return _runtime.get("model_smart", OLLAMA_SMAR
 # ── Helpers pour lister les modèles cloud ─────────────────────────────────────
 
 MODEL_RECOMMENDATIONS = {
-    # Modèles dont on connaît le rôle optimal
-    "fast":  ["8b", "small", "mini", "tiny", "fast"],
-    "smart": ["70b", "72b", "large", "pro", "405b", "ultra"],
+    # Modèles dont on connaît le rôle optimal (testés sur api.ollama.com)
+    "fast":  ["8b", "3b", "small", "mini", "tiny", "fast", "nano",
+              "rnj-1", "ministral-3:8b", "ministral-3:3b", "gemma3:4b"],
+    "smart": ["70b", "80b", "120b", "large", "pro", "405b", "ultra",
+              "qwen3-next", "cogito", "devstral-2", "gpt-oss:120b",
+              "minimax", "nemotron-3-super"],
 }
 
 def _score_model(name: str) -> dict:
