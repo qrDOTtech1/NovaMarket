@@ -134,6 +134,14 @@ def _register_routes(app):
     @login_required
     def onboarding():
         uid  = session["user_id"]
+        user = User.query.get(uid)
+
+        # Vérifier que l'utilisateur existe (intégrité DB)
+        if not user:
+            flash("Compte invalide — réenregistre-toi.", "error")
+            session.pop("user_id", None)
+            return redirect(url_for("register"))
+
         cred = PolyCredential.query.filter_by(user_id=uid).first()
 
         if request.method == "POST":
@@ -149,16 +157,23 @@ def _register_routes(app):
                 flash(f"Connexion échouée : {conn.get('error', 'Erreur inconnue')}", "error")
                 return render_template("onboarding.html", cred=cred)
 
-            if not cred:
-                cred = PolyCredential(user_id=uid)
-                db.session.add(cred)
-            cred.set_key(raw_key)
-            cred.wallet_addr = conn.get("address", "")
-            cred.verified_at = datetime.utcnow()
-            db.session.commit()
+            try:
+                if not cred:
+                    cred = PolyCredential(user_id=uid)
+                    db.session.add(cred)
+                cred.set_key(raw_key)
+                cred.wallet_addr = conn.get("address", "")
+                cred.verified_at = datetime.utcnow()
+                db.session.commit()
 
-            flash(f"Wallet connecté ✅  Solde : {conn['usdc']:.2f} USDC", "success")
-            return redirect(url_for("dashboard"))
+                flash(f"Wallet connecté ✅  Solde : {conn['usdc']:.2f} USDC", "success")
+                return redirect(url_for("dashboard"))
+            except Exception as e:
+                db.session.rollback()
+                logger.error(f"[onboarding] DB error: {e}")
+                flash(f"Erreur DB — réenregistre-toi svp. ({str(e)[:60]})", "error")
+                session.pop("user_id", None)
+                return redirect(url_for("register"))
 
         return render_template("onboarding.html", cred=cred)
 
