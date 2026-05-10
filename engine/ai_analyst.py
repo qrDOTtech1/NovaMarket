@@ -168,6 +168,9 @@ def _call_ollama(model: str, prompt: str, max_tokens: int = 200) -> Optional[str
 def _call_perplexity(model: str, prompt: str, max_tokens: int = 300,
                      system: str = "") -> Optional[str]:
     """Appel Perplexity API (OpenAI-compatible) — retourne None si erreur."""
+    if not PERPLEXITY_API_KEY:
+        logger.debug("[AI/Perplexity] API key non configurée (env var PERPLEXITY_API_KEY)")
+        return None
     messages = []
     if system:
         messages.append({"role": "system", "content": system})
@@ -302,7 +305,9 @@ def classify_article(title: str, summary: str) -> dict:
     raw    = _call_fast(prompt, max_tokens=120)
     result = _parse_json(raw)
     if not result:
+        logger.debug(f"[AI] classify_article parse failed for: {title[:50]}")
         return {"category": "general", "keywords": [], "relevance": 3}
+    logger.debug(f"[AI] classify_article {title[:60]}… → rel={result.get('relevance', 0)} cat={result.get('category')}")
     return result
 
 
@@ -314,6 +319,7 @@ def find_relevant_markets(article_title: str, article_summary: str,
     Lève AIUnavailableError si IA indisponible.
     """
     if not markets:
+        logger.debug("[AI] Aucun marché disponible pour matching")
         return []
 
     market_list = ""
@@ -333,10 +339,13 @@ def find_relevant_markets(article_title: str, article_summary: str,
     raw    = _call_fast(prompt, max_tokens=50)
     result = _parse_json(raw)
     if not result:
+        logger.debug(f"[AI] find_relevant_markets parse failed for: {article_title[:60]}")
         return []
     indices = result.get("relevant", [])
+    matched = [markets[i] for i in indices if isinstance(i, int) and 0 <= i < len(markets)]
+    logger.debug(f"[AI] find_relevant_markets {article_title[:50]}… → {len(matched)} marchés")
     # Sécurité : filtrer les indices non-entiers ou hors bornes
-    return [markets[i] for i in indices if isinstance(i, int) and 0 <= i < len(markets)]
+    return matched
 
 
 def estimate_probability(article_title: str, article_summary: str,
@@ -407,12 +416,15 @@ def batch_analyze(articles: list, markets: list) -> list:
     for art in articles:
         # 1. Classification
         cls = classify_article(art.title, art.summary)
-        if cls.get("relevance", 0) < 3:
+        rel = cls.get("relevance", 0)
+        if rel < 2:  # seuil réduit de 3 à 2
+            logger.debug(f"[AI] Article ignoré (relevance={rel}): {art.title[:60]}…")
             continue
 
         # 2. Marchés pertinents
         relevant = find_relevant_markets(art.title, art.summary, markets, top_n=4)
         if not relevant:
+            logger.debug(f"[AI] Aucun marché pertinent pour: {art.title[:60]}…")
             continue
 
         # 3. Estimation probabilité via Perplexity (web search)
@@ -434,7 +446,9 @@ def batch_analyze(articles: list, markets: list) -> list:
             edge      = abs(estimated - current_prob)
             conf      = analysis["confidence"]
 
-            if edge < 0.10 or conf < 40:
+            # Seuils réduits pour permettre plus de signaux (minimum viable)
+            if edge < 0.05 or conf < 30:
+                logger.debug(f"[AI] Signal rejeté: {question[:50]}… edge={edge:.0%} conf={conf}% (trop faible)")
                 continue
 
             side       = "YES" if estimated > current_prob else "NO"
