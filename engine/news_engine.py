@@ -178,17 +178,26 @@ class NewsEngine:
                             pass
                     art = Article(name, title, summary, link, pub)
                     with self._lock:
-                        # Déduplique par URL hash ET par titre normalisé
-                        title_norm = title.lower().strip()
+                        # Déduplique par URL hash ET par titre normalisé (très strict)
+                        import re
+                        # Normalize title: lowercase, remove extra spaces, keep only words
+                        title_norm = re.sub(r'\s+', ' ', title.lower().strip())
+                        # Extract keywords (remove dates, years, symbols)
+                        title_keywords = ' '.join(re.findall(r'\w+', title_norm))
+
                         is_duplicate = (art.uid in self._articles or
-                                       title_norm in self._titles_seen)
+                                       title_norm in self._titles_seen or
+                                       title_keywords in self._titles_seen)
 
                         if not is_duplicate:
                             self._articles[art.uid] = art
                             self._titles_seen.add(title_norm)
+                            self._titles_seen.add(title_keywords)
                             if art.score >= self.MIN_SCORE:
                                 self._new_since.append(art.uid)
                             new_count += 1
+                        else:
+                            logger.debug(f"[News] Doublon ignoré: {title[:60]}… (src={name})")
             except Exception as e:
                 logger.debug(f"[News] {name} erreur: {e}")
         # Purge du buffer
@@ -219,16 +228,21 @@ class NewsEngine:
                     art = self._articles[uid]
                     if not art.processed and len(unprocessed) < max_items:
                         unprocessed.append(art)
+                        art.processed = True  # Marquer IMMÉDIATEMENT
                     else:
-                        remaining.append(uid)
+                        # Garder les articles processed ou excédentaires
+                        if not art.processed:
+                            remaining.append(uid)
                 else:
-                    remaining.append(uid)
+                    # UID orphelin, enlever de la liste
+                    pass
 
-            # Marquer les articles retournés comme processed
-            for art in unprocessed:
-                art.processed = True
+            logger.debug(
+                f"[News] pop_new: {len(unprocessed)} articles retournés, "
+                f"{len(remaining)} en attente, {len(self._articles)} total"
+            )
 
-            # Garder les uids non-traités pour le prochain appel
+            # Garder seulement les articles non-traités pour le prochain appel
             self._new_since = remaining
             return unprocessed
 

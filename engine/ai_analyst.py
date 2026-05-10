@@ -461,9 +461,14 @@ def batch_analyze(articles: list, markets: list) -> list:
             edge      = abs(estimated - current_prob)
             conf      = analysis["confidence"]
 
-            # Seuils réduits pour permettre plus de signaux (minimum viable)
-            if edge < 0.05 or conf < 30:
-                logger.debug(f"[AI] Signal rejeté: {question[:50]}… edge={edge:.0%} conf={conf}% (trop faible)")
+            # Seuils restaurés : Perplexity est non-déterministe (web search),
+            # donc on a besoin de haute confiance + large edge pour valider un signal
+            MIN_EDGE = 0.12  # 12% minimum (était 10%)
+            MIN_CONF = 60    # 60% minimum (était 40%, réduit à 30)
+
+            if edge < MIN_EDGE or conf < MIN_CONF:
+                logger.debug(f"[AI] Signal rejeté: {question[:50]}… edge={edge:.0%} conf={conf}% "
+                            f"(min: edge={MIN_EDGE:.0%}, conf={MIN_CONF}%)")
                 continue
 
             side       = "YES" if estimated > current_prob else "NO"
