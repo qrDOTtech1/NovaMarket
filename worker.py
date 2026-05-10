@@ -43,6 +43,8 @@ class MarketWorker(threading.Thread):
         self._last_markets_refresh = 0.0
         self._last_news_refresh    = 0.0
         self._last_pos_check       = 0.0
+        # Marchés analysés cette session (market_id) — jamais retestés par Perplexity
+        self._analyzed_this_session: set = set()
 
     def stop(self):
         self._stop.set()
@@ -225,18 +227,38 @@ class MarketWorker(threading.Thread):
         if not articles:
             return
 
+        # ── Marchés BLOQUÉS : déjà position ouverte → on skip complètement ──
+        open_positions = Position.query.filter_by(
+            user_id=self.user_id, result="OPEN"
+        ).with_entities(Position.market_id).all()
+        blocked_market_ids = {row[0] for row in open_positions if row[0]}
+
+        # Marchés analysés cette session (évite double Perplexity dans le batch)
+        blocked_market_ids.update(self._analyzed_this_session)
+
+        if blocked_market_ids:
+            self._log("info", "🔒",
+                      f"{len(blocked_market_ids)} marché(s) déjà ouverts/analysés — skippés")
+
         self._log("info", "🤖",
                   f"Analyse IA de {len(articles)} articles vs {len(self._markets)} marchés… "
                   f"(Perplexity web search + Ollama)")
 
         # Analyse batch IA — lève AIUnavailableError si IA tombe pendant la session
         try:
-            signals = batch_analyze(articles, self._markets)
+            signals = batch_analyze(articles, self._markets,
+                                    blocked_market_ids=blocked_market_ids)
         except AIUnavailableError as e:
             self._log("error", "🚫",
                       f"IA indisponible en cours de session : {e} — "
                       "cycle ignoré, prochain essai dans 60s")
             return  # on ne stoppe pas le bot, juste le cycle courant
+
+        # Enregistrer les marchés analysés pour ne plus les retoucher cette session
+        for sig in signals:
+            mid = sig["market"].get("conditionId", sig["market"].get("condition_id", ""))
+            if mid:
+                self._analyzed_this_session.add(mid)
 
         # Log articles dans la DB
         for art in articles:

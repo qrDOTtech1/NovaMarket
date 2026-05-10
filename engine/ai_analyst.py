@@ -407,19 +407,27 @@ def estimate_probability(article_title: str, article_summary: str,
     }
 
 
-def batch_analyze(articles: list, markets: list) -> list:
+def batch_analyze(articles: list, markets: list,
+                  blocked_market_ids: set = None) -> list:
     """
     Analyse batch : pour chaque article → marchés impactés → signaux.
     Retourne liste triée de signal dicts.
     Lève AIUnavailableError si IA indisponible dès le premier appel.
+
+    blocked_market_ids : set de conditionId déjà ouverts ou analysés — skippés sans appel IA.
     """
+    if blocked_market_ids is None:
+        blocked_market_ids = set()
+
     candidates = []
+    # Track marchés estimés dans CE batch — jamais deux fois le même marché
+    estimated_this_batch: set = set()
 
     for art in articles:
         # 1. Classification
         cls = classify_article(art.title, art.summary)
         rel = cls.get("relevance", 0)
-        if rel < 2:  # seuil réduit de 3 à 2
+        if rel < 2:
             logger.debug(f"[AI] Article ignoré (relevance={rel}): {art.title[:60]}…")
             continue
 
@@ -431,8 +439,17 @@ def batch_analyze(articles: list, markets: list) -> list:
 
         # 3. Estimation probabilité via Perplexity (web search)
         for market in relevant:
+            mid = market.get("conditionId", market.get("condition_id", ""))
             current_prob = market.get("_yes_price", 0.5)
             question     = market.get("question", market.get("title", ""))
+
+            # ── BLOC RADICAL : skip si marché déjà ouvert OU déjà analysé ──
+            if mid and mid in blocked_market_ids:
+                logger.debug(f"[AI] Marché bloqué (déjà ouvert/analysé): {question[:60]}…")
+                continue
+            if mid and mid in estimated_this_batch:
+                logger.debug(f"[AI] Marché déjà estimé ce batch: {question[:60]}…")
+                continue
 
             try:
                 analysis = estimate_probability(
@@ -445,10 +462,9 @@ def batch_analyze(articles: list, markets: list) -> list:
             except Exception as e:
                 # Si erreur parsage ou timeout, essaye une heuristique simple
                 logger.warning(f"[AI] estimate_probability erreur: {e} — fallback heuristique")
-                # Heuristique fallback : légère confiance basée sur article score
                 analysis = {
                     "estimated_prob": current_prob + (0.15 if art.score > 2 else 0.05),
-                    "confidence":     50 + (art.score * 5),  # +5% par mot-clé trouvé
+                    "confidence":     50 + (art.score * 5),
                     "reasoning":      f"Signal basé sur actualité (score={art.score})",
                     "direction":      "UP" if art.score > 2 else "NEUTRAL",
                     "exit_trigger":   "Évolution de la situation décrite",
@@ -456,6 +472,10 @@ def batch_analyze(articles: list, markets: list) -> list:
                 }
                 analysis["estimated_prob"] = max(0.01, min(0.99, analysis["estimated_prob"]))
                 analysis["confidence"] = max(0, min(100, analysis["confidence"]))
+
+            # Marquer ce marché comme estimé dans ce batch — plus jamais appelé
+            if mid:
+                estimated_this_batch.add(mid)
 
             estimated = analysis["estimated_prob"]
             edge      = abs(estimated - current_prob)
