@@ -57,6 +57,7 @@ class BotSession(db.Model):
     id           = db.Column(db.Integer, primary_key=True)
     user_id      = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     status       = db.Column(db.String(20), default="stopped")
+    mode         = db.Column(db.String(20), default="real")   # 'real' | 'simulation'
     started_at   = db.Column(db.DateTime, nullable=True)
     stopped_at   = db.Column(db.DateTime, nullable=True)
     pnl_usd      = db.Column(db.Float, default=0.0)

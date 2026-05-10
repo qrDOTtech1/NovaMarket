@@ -25,12 +25,15 @@ POSITION_INTERVAL = 120   # check positions ouvertes toutes les 2min
 MARKET_INTERVAL   = 300   # refresh liste marchés toutes les 5min
 
 
+SIM_BANKROLL = 50.0   # bankroll virtuel en mode simulation
+
 class MarketWorker(threading.Thread):
-    def __init__(self, app, user_id: int, session_id: int):
+    def __init__(self, app, user_id: int, session_id: int, simulate: bool = False):
         super().__init__(daemon=True, name=f"nm-{user_id}")
         self.app        = app
         self.user_id    = user_id
         self.session_id = session_id
+        self.simulate   = simulate
         self._stop      = threading.Event()
         self._news      = NewsEngine()
         self._markets   = []
@@ -112,20 +115,37 @@ class MarketWorker(threading.Thread):
 
         client = PolyMarketClient(cred.get_key())
         conn   = client.connect()
-        if not conn.get("ok"):
-            self._set_error(f"Connexion Polymarket échouée : {conn.get('error')}")
-            return
 
-        bankroll = conn["usdc"]
-        self._log("success", "🚀",
-                  f"NovaMarket démarré — bankroll {bankroll:.2f} USDC | "
-                  f"{len(CATEGORIES)} catégories | {len(self._news._articles)} articles en cache")
+        if self.simulate:
+            # Simulation : bankroll virtuel, la connexion est optionnelle
+            bankroll = SIM_BANKROLL
+            real_bal = conn.get("usdc", 0) if conn.get("ok") else 0
+            self._log("info", "📊",
+                      f"[SIM] Mode SIMULATION activé — bankroll virtuel {SIM_BANKROLL:.0f}$ "
+                      f"(solde réel : {real_bal:.2f} USDC) | "
+                      f"Les ordres ne seront PAS exécutés sur Polymarket")
+        else:
+            if not conn.get("ok"):
+                self._set_error(f"Connexion Polymarket échouée : {conn.get('error')}")
+                return
+            bankroll = conn["usdc"]
+            self._log("success", "🚀",
+                      f"NovaMarket démarré — bankroll {bankroll:.2f} USDC | "
+                      f"{len(CATEGORIES)} catégories | {len(self._news._articles)} articles en cache")
+
         CircuitBreaker.init(self.user_id, bankroll)
 
         while not self._stop.is_set():
             now = time.time()
             try:
-                bankroll = client.get_balance()
+                if self.simulate:
+                    invested = sum(
+                        p.size_usd for p in
+                        Position.query.filter_by(user_id=self.user_id, result="OPEN").all()
+                    )
+                    bankroll = max(SIM_BANKROLL - invested, 1.0)
+                else:
+                    bankroll = client.get_balance()
                 cb = CircuitBreaker.get(self.user_id)
 
                 if cb and cb.daily_triggered:
@@ -276,19 +296,26 @@ class MarketWorker(threading.Thread):
                   f"edge={edge:.0%} conf={conf}% | "
                   f"taille={size:.2f}$ EV={ev:+.2f}$")
 
-        # Récupérer les token IDs
-        token_ids = client.get_token_ids(market)
-        token_id  = token_ids.get(side)
-        if not token_id:
-            self._log("warning", "⚠️", f"Token ID introuvable pour {side} sur ce marché")
-            return
+        if self.simulate:
+            # Simulation — pas de vrai ordre, juste un ID fictif
+            order = {"ok": True, "order_id": f"SIM-{int(time.time())}"}
+            self._log("info", "📊",
+                      f"[SIM] Ordre simulé : {side} [{question[:50]}…] | "
+                      f"{size:.2f}$ virtuel | edge {edge:.0%} | EV {ev:+.2f}$")
+        else:
+            # Récupérer les token IDs
+            token_ids = client.get_token_ids(market)
+            token_id  = token_ids.get(side)
+            if not token_id:
+                self._log("warning", "⚠️", f"Token ID introuvable pour {side} sur ce marché")
+                return
 
-        # Placement ordre
-        order = client.place_order(token_id, side, size, sig["entry_price"])
-        if not order.get("ok"):
-            self._log("warning", "⚠️",
-                      f"Ordre refusé: {str(order.get('error',''))[:80]}")
-            return
+            # Placement ordre réel
+            order = client.place_order(token_id, side, size, sig["entry_price"])
+            if not order.get("ok"):
+                self._log("warning", "⚠️",
+                          f"Ordre refusé: {str(order.get('error',''))[:80]}")
+                return
 
         # Enregistrement position
         try:
@@ -321,8 +348,9 @@ class MarketWorker(threading.Thread):
             logger.error(f"[NM] record position error: {e}")
             db.session.rollback()
 
+        pfx = "[SIM] " if self.simulate else ""
         self._log("success", "✅",
-                  f"Position ouverte : {side} [{question[:50]}…] | "
+                  f"{pfx}Position ouverte : {side} [{question[:50]}…] | "
                   f"{size:.2f}$ | edge {edge:.0%} | EV {ev:+.2f}$ | "
                   f"conf {conf}%")
 
@@ -440,12 +468,12 @@ class BotManager:
     _lock = threading.Lock()
 
     @classmethod
-    def start(cls, app, user_id: int, session_id: int) -> bool:
+    def start(cls, app, user_id: int, session_id: int, simulate: bool = False) -> bool:
         with cls._lock:
             w = cls._workers.get(user_id)
             if w and w.is_alive():
                 return False
-            w = MarketWorker(app, user_id, session_id)
+            w = MarketWorker(app, user_id, session_id, simulate=simulate)
             w.start()
             cls._workers[user_id] = w
             return True

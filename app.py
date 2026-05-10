@@ -210,11 +210,13 @@ def _register_routes(app):
 
         cb = CircuitBreaker.get(uid)
         is_running = BotManager.is_running(uid)
+        sim_mode   = (active_session.mode == "simulation") if active_session else False
 
         return render_template("dashboard.html",
             user=user,
             cred=cred,
             is_running=is_running,
+            sim_mode=sim_mode,
             active_session=active_session,
             past_sessions=past_sessions,
             open_positions=open_positions,
@@ -242,21 +244,39 @@ def _register_routes(app):
         if BotManager.is_running(uid):
             return jsonify({"ok": False, "error": "Bot déjà en cours"})
 
+        # ── Déterminer le mode : simulation si solde < 10$ ────────────────────
+        simulate = False
+        try:
+            client = PolyMarketClient(cred.get_key())
+            conn   = client.connect()
+            if conn.get("ok"):
+                balance  = conn.get("usdc", 0)
+                simulate = balance < 10.0
+            else:
+                simulate = True   # connexion impossible → simulation
+        except Exception:
+            simulate = True
+
         s = BotSession(
             user_id=uid,
             status="running",
+            mode="simulation" if simulate else "real",
             started_at=datetime.utcnow(),
         )
         db.session.add(s)
         db.session.commit()
 
-        launched = BotManager.start(app._get_current_object(), uid, s.id)
+        launched = BotManager.start(app._get_current_object(), uid, s.id, simulate=simulate)
         if not launched:
             s.status = "error"; s.error_msg = "Échec démarrage thread"
             db.session.commit()
             return jsonify({"ok": False, "error": "Impossible de démarrer le worker"})
 
-        return jsonify({"ok": True, "session_id": s.id})
+        return jsonify({
+            "ok":        True,
+            "session_id": s.id,
+            "mode":      "simulation" if simulate else "real",
+        })
 
     @app.route("/bot/stop", methods=["POST"])
     @login_required
@@ -353,8 +373,7 @@ def _register_routes(app):
             model_smart= request.form.get("model_smart", "").strip()
 
             if not ollama_url:
-                flash("L'URL Ollama Cloud est requise.", "error")
-                return render_template("settings_ollama.html", cfg=cfg, models=[])
+                ollama_url = "https://api.ollama.com"  # hardcode si absent
 
             if not cfg:
                 cfg = OllamaConfig(user_id=uid)

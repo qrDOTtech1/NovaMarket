@@ -13,10 +13,18 @@
   /* ── Status pill ── */
   .status-pill { display:inline-flex; align-items:center; gap:.35rem; padding:.3rem .8rem; border-radius:20px; font-size:.78rem; font-weight:600; }
   .status-pill.running { background:rgba(102,187,106,.12); color:#a5d6a7; border:1px solid rgba(102,187,106,.25); }
+  .status-pill.running-sim { background:rgba(66,165,245,.1); color:#90caf9; border:1px solid rgba(66,165,245,.25); }
   .status-pill.stopped { background:rgba(122,150,170,.1);  color:var(--nova-muted); border:1px solid var(--nova-border); }
   .pulse { width:7px;height:7px;border-radius:50%;background:var(--nova-green);animation:pulse 1.4s infinite; }
+  .pulse-sim { width:7px;height:7px;border-radius:50%;background:#42a5f5;animation:pulse-sim 1.4s infinite; }
   .dot-stop { width:7px;height:7px;border-radius:50%;background:var(--nova-muted); }
   @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(102,187,106,.6)} 70%{box-shadow:0 0 0 6px rgba(102,187,106,0)} 100%{box-shadow:0 0 0 0 rgba(102,187,106,0)} }
+  @keyframes pulse-sim { 0%{box-shadow:0 0 0 0 rgba(66,165,245,.6)} 70%{box-shadow:0 0 0 6px rgba(66,165,245,0)} 100%{box-shadow:0 0 0 0 rgba(66,165,245,0)} }
+
+  /* ── Toast ── */
+  .toast { position:fixed; bottom:1.5rem; right:1.5rem; z-index:9999; background:var(--nova-surface); border:1px solid var(--nova-border); border-radius:10px; padding:.85rem 1.2rem; font-size:.83rem; display:flex; align-items:center; gap:.6rem; box-shadow:0 8px 30px rgba(0,0,0,.35); animation:toastIn .3s ease; max-width:360px; }
+  .toast.sim { border-color:rgba(66,165,245,.35); }
+  @keyframes toastIn { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
 
   /* ── KPI grid ── */
   .kpi-grid { display:grid; grid-template-columns:repeat(2,1fr); gap:.75rem; margin-bottom:1rem; }
@@ -233,12 +241,18 @@
     </div>
     <div class="top-bar-right">
       {% if is_running %}
-      <span class="status-pill running"><span class="pulse"></span>Bot actif</span>
+        {% if sim_mode %}
+        <span class="status-pill running-sim"><span class="pulse-sim"></span>📊 Simulation active</span>
+        {% else %}
+        <span class="status-pill running"><span class="pulse"></span>Bot actif — Réel</span>
+        {% endif %}
       <button class="btn btn-danger" id="stop-btn" onclick="botStop()">⏹ Arrêter</button>
       {% else %}
       <span class="status-pill stopped"><span class="dot-stop"></span>Bot arrêté</span>
       <button class="btn btn-primary" id="start-btn" onclick="botStart()"
-              {% if not cred or not cred.verified_at %}disabled{% endif %}>▶ Démarrer</button>
+              {% if not cred or not cred.verified_at %}disabled title="Configure ton wallet d'abord"{% endif %}>
+        ▶ Lancer{% if cred and cred.verified_at %} <span id="mode-hint" style="font-size:.72rem;opacity:.7;">(…)</span>{% endif %}
+      </button>
       {% endif %}
     </div>
   </div>
@@ -600,11 +614,41 @@
 
   function botStart() {
     const btn=document.getElementById('start-btn');
-    btn.disabled=true; btn.textContent='…';
+    btn.disabled=true; btn.textContent='⏳ Vérification solde…';
     fetch('/bot/start',{method:'POST'}).then(r=>r.json()).then(d=>{
-      if(d.ok) location.reload();
-      else { alert('Erreur: '+d.error); btn.disabled=false; btn.textContent='▶ Démarrer'; }
-    }).catch(()=>{ btn.disabled=false; btn.textContent='▶ Démarrer'; });
+      if(d.ok){
+        if(d.mode==='simulation'){
+          showToast('📊','Mode SIMULATION activé','Solde < 10$ — les ordres sont virtuels (bankroll fictif de 50$). Dépose des USDC sur Polymarket pour passer en réel.','sim');
+          setTimeout(()=>location.reload(), 3200);
+        } else {
+          location.reload();
+        }
+      } else {
+        alert('Erreur: '+d.error);
+        btn.disabled=false; btn.innerHTML='▶ Lancer <span id="mode-hint" style="font-size:.72rem;opacity:.7;">(…)</span>';
+        updateModeHint();
+      }
+    }).catch(()=>{ btn.disabled=false; btn.textContent='▶ Lancer'; });
+  }
+
+  function showToast(icon, title, body, cls) {
+    const t=document.createElement('div');
+    t.className='toast '+(cls||'');
+    t.innerHTML='<span style="font-size:1.3rem;">'+icon+'</span><div><div style="font-weight:700;margin-bottom:.2rem;">'+escHtml(title)+'</div><div style="color:var(--nova-muted);font-size:.78rem;line-height:1.4;">'+escHtml(body)+'</div></div>';
+    document.body.appendChild(t);
+    setTimeout(()=>{ t.style.opacity='0'; t.style.transition='opacity .4s'; setTimeout(()=>t.remove(),400); }, 5000);
+  }
+
+  /* Affiche "simulation" ou "réel" dans le hint du bouton selon le solde */
+  function updateModeHint() {
+    const hint=document.getElementById('mode-hint');
+    if(!hint) return;
+    fetch('/api/balance').then(r=>r.json()).then(d=>{
+      if(d.ok){
+        hint.textContent = d.usdc < 10 ? 'simulation' : 'réel';
+        hint.style.color = d.usdc < 10 ? '#90caf9' : '#a5d6a7';
+      }
+    }).catch(()=>{});
   }
   function botStop() {
     if(!confirm('Arrêter le bot ?')) return;
@@ -622,7 +666,7 @@
     return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  pollBalance(); pollAIStatus();
+  pollBalance(); pollAIStatus(); updateModeHint();
   setInterval(pollAIStatus, 60000);
   // News poll même quand bot arrêté (les flux tournent indépendamment)
   pollNews();
