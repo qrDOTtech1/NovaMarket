@@ -402,6 +402,8 @@ def estimate_probability(article_title: str, article_summary: str,
         "confidence":     cf,
         "reasoning":      str(result.get("reasoning", ""))[:300],
         "direction":      result.get("direction", "NEUTRAL"),
+        "exit_trigger":   str(result.get("exit_trigger", ""))[:200],
+        "thesis":         str(result.get("thesis", ""))[:200],
     }
 
 
