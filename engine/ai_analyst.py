@@ -18,6 +18,8 @@ Variables Railway requises :
 import os
 import json
 import logging
+import time
+import threading
 import requests
 from typing import Optional
 
@@ -131,43 +133,81 @@ def fetch_ollama_models(url: str, api_key: str) -> dict:
 
 
 class AIUnavailableError(Exception):
-    """Levée quand aucun backend IA n'est joignable."""
     pass
+
+
+# ── Rate limiter ─────────────────────────────────────────────────────────────
+
+class _RateLimiter:
+    """Token bucket rate limiter — prevents burning through API credits."""
+    def __init__(self, calls_per_minute: int = 20):
+        self._interval = 60.0 / calls_per_minute
+        self._last_call = 0.0
+        self._lock = threading.Lock()
+
+    def wait(self):
+        with self._lock:
+            now = time.time()
+            elapsed = now - self._last_call
+            if elapsed < self._interval:
+                time.sleep(self._interval - elapsed)
+            self._last_call = time.time()
+
+_rate_limiter_fast  = _RateLimiter(calls_per_minute=30)
+_rate_limiter_smart = _RateLimiter(calls_per_minute=15)
+
+
+# ── Retry with exponential backoff ───────────────────────────────────────────
+
+def _retry(fn, retries: int = 2, base_delay: float = 1.5):
+    """Call fn(); on None result, retry with exponential backoff."""
+    for attempt in range(retries + 1):
+        result = fn()
+        if result is not None:
+            return result
+        if attempt < retries:
+            delay = base_delay * (2 ** attempt)
+            logger.debug(f"[AI] Retry {attempt+1}/{retries} in {delay:.1f}s")
+            time.sleep(delay)
+    return None
 
 
 # ── Backends ──────────────────────────────────────────────────────────────────
 
 def _call_ollama(model: str, prompt: str, max_tokens: int = 200) -> Optional[str]:
-    """Appel Ollama Cloud /api/generate — retourne None si indisponible."""
     url = _get_ollama_url()
     key = _get_ollama_key()
     if not url:
-        return None  # URL cloud non configurée
+        return None
     headers = {"Authorization": f"Bearer {key}"} if key else {}
-    try:
-        resp = requests.post(
-            f"{url.rstrip('/')}/api/generate",
-            headers=headers,
-            json={
-                "model": model,
-                "prompt": prompt,
-                "stream": False,
-                "options": {"temperature": 0.05, "num_predict": max_tokens},
-            },
-            timeout=OLLAMA_TIMEOUT,
-        )
-        if resp.status_code == 200:
-            return resp.json().get("response", "")
-        logger.debug(f"[AI/Ollama Cloud] HTTP {resp.status_code}")
-        return None
-    except Exception as e:
-        logger.debug(f"[AI/Ollama Cloud] indisponible: {e}")
-        return None
+    def _do():
+        try:
+            resp = requests.post(
+                f"{url.rstrip('/')}/api/generate",
+                headers=headers,
+                json={
+                    "model": model,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {"temperature": 0.05, "num_predict": max_tokens},
+                },
+                timeout=OLLAMA_TIMEOUT,
+            )
+            if resp.status_code == 200:
+                return resp.json().get("response", "")
+            if resp.status_code == 429:
+                logger.warning("[AI/Ollama Cloud] rate limited (429)")
+            else:
+                logger.debug(f"[AI/Ollama Cloud] HTTP {resp.status_code}")
+            return None
+        except Exception as e:
+            logger.debug(f"[AI/Ollama Cloud] indisponible: {e}")
+            return None
+    return _retry(_do, retries=2, base_delay=2.0)
 
 
 def _call_perplexity(model: str, prompt: str, max_tokens: int = 300,
                      system: str = "") -> Optional[str]:
-    """Appel Perplexity API (OpenAI-compatible) — retourne None si erreur."""
     if not PERPLEXITY_API_KEY:
         logger.debug("[AI/Perplexity] API key non configurée (env var PERPLEXITY_API_KEY)")
         return None
@@ -175,37 +215,37 @@ def _call_perplexity(model: str, prompt: str, max_tokens: int = 300,
     if system:
         messages.append({"role": "system", "content": system})
     messages.append({"role": "user", "content": prompt})
-    try:
-        resp = requests.post(
-            PERPLEXITY_URL,
-            headers={
-                "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": model,
-                "messages": messages,
-                "temperature": 0.1,
-                "max_tokens": max_tokens,
-            },
-            timeout=PPLX_TIMEOUT,
-        )
-        if resp.status_code == 200:
-            return resp.json()["choices"][0]["message"]["content"]
-        logger.warning(f"[AI/Perplexity] HTTP {resp.status_code}: {resp.text[:200]}")
-        return None
-    except Exception as e:
-        logger.warning(f"[AI/Perplexity] erreur: {e}")
-        return None
+    def _do():
+        try:
+            resp = requests.post(
+                PERPLEXITY_URL,
+                headers={
+                    "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "messages": messages,
+                    "temperature": 0.1,
+                    "max_tokens": max_tokens,
+                },
+                timeout=PPLX_TIMEOUT,
+            )
+            if resp.status_code == 200:
+                return resp.json()["choices"][0]["message"]["content"]
+            if resp.status_code == 429:
+                logger.warning("[AI/Perplexity] rate limited (429)")
+            else:
+                logger.warning(f"[AI/Perplexity] HTTP {resp.status_code}: {resp.text[:200]}")
+            return None
+        except Exception as e:
+            logger.warning(f"[AI/Perplexity] erreur: {e}")
+            return None
+    return _retry(_do, retries=2, base_delay=2.0)
 
 
 def _call_fast(prompt: str, max_tokens: int = 150) -> str:
-    """
-    Appel rapide (classify, match marchés) :
-      1. Ollama Cloud  → modèle fast sélectionné par l'utilisateur
-      2. Perplexity    → fallback si Ollama cloud down
-    Lève AIUnavailableError si les deux échouent.
-    """
+    _rate_limiter_fast.wait()
     raw = _call_ollama(_get_model_fast(), prompt, max_tokens)
     if raw is not None:
         return raw
@@ -217,12 +257,7 @@ def _call_fast(prompt: str, max_tokens: int = 150) -> str:
 
 
 def _call_smart(prompt: str, system: str = "", max_tokens: int = 400) -> str:
-    """
-    Appel analytique profond (estimation probabilité) :
-      1. Perplexity sonar-large-online → priorité absolue (accès web temps réel)
-      2. Ollama Cloud                  → fallback avec modèle smart sélectionné
-    Lève AIUnavailableError si les deux échouent.
-    """
+    _rate_limiter_smart.wait()
     raw = _call_perplexity(PPLX_SMART_MODEL, prompt, max_tokens, system)
     if raw is not None:
         return raw

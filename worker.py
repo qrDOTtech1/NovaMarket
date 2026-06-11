@@ -147,6 +147,7 @@ class MarketWorker(threading.Thread):
                       f"{len(CATEGORIES)} catégories | {len(self._news._articles)} articles en cache")
 
         CircuitBreaker.init(self.user_id, bankroll)
+        start_bankroll = bankroll
 
         while not self._stop.is_set():
             now = time.time()
@@ -173,12 +174,12 @@ class MarketWorker(threading.Thread):
 
                 # Refresh news + analyse (article → marchés)
                 if now - self._last_news_refresh > NEWS_INTERVAL:
-                    self._news_cycle(client, bankroll, cb)
+                    self._news_cycle(client, bankroll, cb, start_bankroll)
                     self._last_news_refresh = now
 
                 # Cycle marché → news RSS corrélées (chaque marché → signal)
                 if now - self._last_market_signal_cycle > MARKET_SIGNAL_INTERVAL:
-                    self._market_signal_cycle(client, bankroll, cb)
+                    self._market_signal_cycle(client, bankroll, cb, start_bankroll)
                     self._last_market_signal_cycle = now
 
                 # Check positions ouvertes
@@ -222,7 +223,8 @@ class MarketWorker(threading.Thread):
 
     # ── Cycle news ────────────────────────────────────────────────────────────
 
-    def _news_cycle(self, client: PolyMarketClient, bankroll: float, cb):
+    def _news_cycle(self, client: PolyMarketClient, bankroll: float, cb,
+                    start_bankroll: float = 0.0):
         new_count = self._news.refresh()
         if new_count == 0:
             return
@@ -345,12 +347,13 @@ class MarketWorker(threading.Thread):
             if not ok:
                 self._log("warning", "🚫", f"CB bloque: {cb_reason}")
                 break
-            self._execute_signal(sig, client, bankroll, cb, active_count)
+            self._execute_signal(sig, client, bankroll, cb, active_count, start_bankroll)
             active_count += 1
 
     # ── Cycle marché → corrélation RSS → signal ───────────────────────────────
 
-    def _market_signal_cycle(self, client: PolyMarketClient, bankroll: float, cb):
+    def _market_signal_cycle(self, client: PolyMarketClient, bankroll: float, cb,
+                             start_bankroll: float = 0.0):
         """
         Sens inverse du _news_cycle : pour chaque marché actif non encore analysé,
         cherche les articles RSS corrélés et génère un signal si edge suffisant.
@@ -475,13 +478,14 @@ class MarketWorker(threading.Thread):
             if not ok:
                 self._log("warning", "🚫", f"CB bloque: {cb_reason}")
                 break
-            self._execute_signal(sig, client, bankroll, cb, active_count)
+            self._execute_signal(sig, client, bankroll, cb, active_count, start_bankroll)
             active_count += 1
 
     # ── Exécution d'un signal ─────────────────────────────────────────────────
 
     def _execute_signal(self, sig: dict, client: PolyMarketClient,
-                        bankroll: float, cb, active_count: int):
+                        bankroll: float, cb, active_count: int,
+                        start_bankroll: float = 0.0):
         market   = sig["market"]
         market_id = market.get("conditionId", market.get("condition_id", ""))
         question = market.get("question", market.get("title", ""))[:120]
@@ -518,6 +522,7 @@ class MarketWorker(threading.Thread):
             bankroll=bankroll,
             open_exposure=open_exp,
             category_exposure=cat_exp,
+            start_bankroll=start_bankroll,
         )
 
         if size <= 0:
@@ -658,6 +663,12 @@ class MarketWorker(threading.Thread):
                         self._log("warning", "🛡️",
                                   f"LOSS [{pos.side}] {pos.market_question[:60]}… | "
                                   f"{pnl:.2f}$")
+                # Stale position alert
+                if not resolved and pos.is_stale:
+                    self._log("warning", "⏰",
+                              f"Position stale ({pos.age_hours:.0f}h) : "
+                              f"[{pos.side}] {pos.market_question[:50]}…")
+
                 db.session.commit()
             except Exception as e:
                 logger.error(f"[NM] check_positions error: {e}")
