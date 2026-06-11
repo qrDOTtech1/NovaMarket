@@ -96,10 +96,38 @@ class Position(db.Model):
     exit_trigger   = db.Column(db.Text, nullable=True)   # événement qui résoudra le marché
     thesis         = db.Column(db.Text, nullable=True)   # thèse d'investissement
 
+    __table_args__ = (
+        db.Index("ix_positions_user_result", "user_id", "result"),
+        db.Index("ix_positions_user_market", "user_id", "market_id"),
+        db.Index("ix_positions_timestamp", "timestamp"),
+    )
+
     def roi_if_win(self) -> float:
         if self.entry_price and self.entry_price > 0:
             return round((1.0 / self.entry_price - 1.0) * 100, 1)
         return 0.0
+
+    @property
+    def age_hours(self) -> float:
+        if not self.timestamp:
+            return 0.0
+        delta = datetime.utcnow() - self.timestamp
+        return round(delta.total_seconds() / 3600, 1)
+
+    @property
+    def is_stale(self) -> bool:
+        if self.hours_to_close and self.age_hours > self.hours_to_close * 0.9:
+            return True
+        return self.age_hours > 168  # >7 days with no resolution
+
+    @property
+    def unrealized_pnl(self) -> float:
+        if self.current_price is None or self.entry_price is None:
+            return 0.0
+        if self.side == "YES":
+            return round((self.current_price - self.entry_price) * self.size_usd / self.entry_price, 2)
+        else:
+            return round((self.entry_price - self.current_price) * self.size_usd / self.entry_price, 2)
 
     def to_dict(self):
         return {
@@ -121,6 +149,9 @@ class Position(db.Model):
             "result":           self.result,
             "current_price":    self.current_price,
             "roi_if_win":       self.roi_if_win(),
+            "age_hours":        self.age_hours,
+            "is_stale":         self.is_stale,
+            "unrealized_pnl":   self.unrealized_pnl,
         }
 
 
@@ -168,8 +199,10 @@ class OllamaConfig(db.Model):
 
 
 class NewsLog(db.Model):
-    """Articles analysés récemment."""
     __tablename__ = "news_logs"
+    __table_args__ = (
+        db.Index("ix_news_user_ts", "user_id", "timestamp"),
+    )
     id          = db.Column(db.Integer, primary_key=True)
     user_id     = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     timestamp   = db.Column(db.DateTime, default=datetime.utcnow)
@@ -193,8 +226,10 @@ class NewsLog(db.Model):
 
 
 class BotActivity(db.Model):
-    """Flux d'activité temps réel."""
     __tablename__ = "bot_activity"
+    __table_args__ = (
+        db.Index("ix_activity_user_id", "user_id", "id"),
+    )
     id        = db.Column(db.Integer, primary_key=True)
     user_id   = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)

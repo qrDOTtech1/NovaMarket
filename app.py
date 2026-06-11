@@ -206,58 +206,58 @@ def _register_routes(app):
     @app.route("/dashboard")
     @login_required
     def dashboard():
+        from sqlalchemy import func, case
+
         uid  = session["user_id"]
         user = User.query.get(uid)
         cred = PolyCredential.query.filter_by(user_id=uid).first()
 
-        # Session active
         active_session = (BotSession.query
                           .filter_by(user_id=uid, status="running")
                           .order_by(BotSession.id.desc())
                           .first())
 
-        # Historique sessions (10 dernières)
         past_sessions = (BotSession.query
                          .filter_by(user_id=uid)
                          .order_by(BotSession.id.desc())
                          .limit(10).all())
 
-        # Positions ouvertes
         open_positions = (Position.query
                           .filter_by(user_id=uid, result="OPEN")
                           .order_by(Position.timestamp.desc())
                           .all())
 
-        # Dernières positions fermées (20)
         closed_positions = (Position.query
                             .filter(Position.user_id == uid,
                                     Position.result.in_(["WIN", "LOSS"]))
                             .order_by(Position.timestamp.desc())
                             .limit(20).all())
 
-        # Activité récente
         activities = (BotActivity.query
                       .filter_by(user_id=uid)
                       .order_by(BotActivity.id.desc())
                       .limit(50).all())
 
-        # News récentes
         recent_news = (NewsLog.query
+                       .filter_by(user_id=uid)
                        .order_by(NewsLog.timestamp.desc())
                        .limit(20).all())
 
-        # Stats globales
-        all_pos = Position.query.filter_by(user_id=uid).all()
-        total   = len(all_pos)
-        wins    = sum(1 for p in all_pos if p.result == "WIN")
-        losses  = sum(1 for p in all_pos if p.result == "LOSS")
-        total_pnl = sum((p.pnl_usd or 0) for p in all_pos)
+        stats = db.session.query(
+            func.count(Position.id).label("total"),
+            func.sum(case((Position.result == "WIN", 1), else_=0)).label("wins"),
+            func.sum(case((Position.result == "LOSS", 1), else_=0)).label("losses"),
+            func.coalesce(func.sum(Position.pnl_usd), 0.0).label("total_pnl"),
+        ).filter(Position.user_id == uid).first()
+
+        total   = stats.total or 0
+        wins    = stats.wins or 0
+        losses  = stats.losses or 0
+        total_pnl = round(stats.total_pnl or 0, 2)
         winrate   = round(wins / (wins + losses) * 100, 1) if (wins + losses) else 0
 
         cb = CircuitBreaker.get(uid)
 
-        # is_running : thread en mémoire (même processus) OU session DB active
-        # Nécessaire car Gunicorn multi-process — chaque worker a sa propre mémoire
         is_running = BotManager.is_running(uid) or (
             active_session is not None and active_session.stopped_at is None
         )
@@ -692,6 +692,131 @@ def _register_routes(app):
         """Vérifie les backends IA disponibles (Ollama + Perplexity)."""
         status = check_ai_available()
         return jsonify(status)
+
+    @app.route("/api/analytics")
+    @login_required
+    def api_analytics():
+        """
+        Performance analytics — daily P&L curve, category breakdown,
+        streak tracking, and risk-adjusted metrics.
+        """
+        from sqlalchemy import func, case, cast, Date
+        import math
+
+        uid = session["user_id"]
+        days = request.args.get("days", 30, type=int)
+        days = min(days, 365)
+        cutoff = datetime.utcnow() - timedelta(days=days)
+
+        resolved = (Position.query
+                    .filter(Position.user_id == uid,
+                            Position.result.in_(["WIN", "LOSS"]),
+                            Position.timestamp >= cutoff)
+                    .order_by(Position.timestamp.asc())
+                    .all())
+
+        daily_pnl_q = (db.session.query(
+            cast(Position.timestamp, Date).label("day"),
+            func.sum(Position.pnl_usd).label("pnl"),
+            func.count(Position.id).label("trades"),
+            func.sum(case((Position.result == "WIN", 1), else_=0)).label("w"),
+            func.sum(case((Position.result == "LOSS", 1), else_=0)).label("l"),
+        ).filter(
+            Position.user_id == uid,
+            Position.result.in_(["WIN", "LOSS"]),
+            Position.timestamp >= cutoff,
+        ).group_by(cast(Position.timestamp, Date))
+         .order_by(cast(Position.timestamp, Date).asc())
+         .all())
+
+        daily_pnl = []
+        cumulative = 0.0
+        for row in daily_pnl_q:
+            cumulative += float(row.pnl or 0)
+            daily_pnl.append({
+                "date":       str(row.day),
+                "pnl":        round(float(row.pnl or 0), 2),
+                "cumulative": round(cumulative, 2),
+                "trades":     row.trades,
+                "wins":       row.w or 0,
+                "losses":     row.l or 0,
+            })
+
+        cat_q = (db.session.query(
+            Position.category,
+            func.count(Position.id).label("trades"),
+            func.sum(Position.pnl_usd).label("pnl"),
+            func.sum(case((Position.result == "WIN", 1), else_=0)).label("w"),
+            func.avg(Position.edge_at_entry).label("avg_edge"),
+            func.avg(Position.ai_confidence).label("avg_conf"),
+        ).filter(
+            Position.user_id == uid,
+            Position.result.in_(["WIN", "LOSS"]),
+            Position.timestamp >= cutoff,
+        ).group_by(Position.category).all())
+
+        categories = [{
+            "category":       r.category or "general",
+            "trades":         r.trades,
+            "pnl":            round(float(r.pnl or 0), 2),
+            "winrate":        round((r.w or 0) / max(r.trades, 1) * 100, 1),
+            "avg_edge":       round(float(r.avg_edge or 0) * 100, 1),
+            "avg_confidence": round(float(r.avg_conf or 0), 0),
+        } for r in cat_q]
+
+        best_streak = 0
+        worst_streak = 0
+        cur_win = 0
+        cur_loss = 0
+        for pos in resolved:
+            if pos.result == "WIN":
+                cur_win += 1
+                cur_loss = 0
+                best_streak = max(best_streak, cur_win)
+            else:
+                cur_loss += 1
+                cur_win = 0
+                worst_streak = max(worst_streak, cur_loss)
+
+        pnl_values = [float(d["pnl"]) for d in daily_pnl if d["pnl"] != 0]
+        if len(pnl_values) >= 2:
+            avg_pnl = sum(pnl_values) / len(pnl_values)
+            std_pnl = (sum((x - avg_pnl)**2 for x in pnl_values) / len(pnl_values)) ** 0.5
+            sharpe = round(avg_pnl / std_pnl, 2) if std_pnl > 0 else 0.0
+        else:
+            avg_pnl = sum(pnl_values) / max(len(pnl_values), 1)
+            sharpe = 0.0
+
+        max_dd = 0.0
+        peak = 0.0
+        for d in daily_pnl:
+            peak = max(peak, d["cumulative"])
+            dd = peak - d["cumulative"]
+            max_dd = max(max_dd, dd)
+
+        total_w = sum(1 for p in resolved if p.result == "WIN")
+        total_l = sum(1 for p in resolved if p.result == "LOSS")
+        avg_win = 0.0
+        avg_loss = 0.0
+        if total_w:
+            avg_win = sum(p.pnl_usd for p in resolved if p.result == "WIN") / total_w
+        if total_l:
+            avg_loss = abs(sum(p.pnl_usd for p in resolved if p.result == "LOSS") / total_l)
+        profit_factor = round(avg_win / avg_loss, 2) if avg_loss > 0 else 0.0
+
+        return jsonify({
+            "daily_pnl":     daily_pnl,
+            "categories":    categories,
+            "metrics": {
+                "sharpe_ratio":    sharpe,
+                "max_drawdown":    round(max_dd, 2),
+                "profit_factor":   profit_factor,
+                "avg_daily_pnl":   round(avg_pnl, 2),
+                "best_streak":     best_streak,
+                "worst_streak":    worst_streak,
+                "total_resolved":  len(resolved),
+            },
+        })
 
     @app.route("/api/debug/status")
     @login_required
