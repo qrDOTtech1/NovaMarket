@@ -192,6 +192,44 @@ class NewsLog(db.Model):
         }
 
 
+class PerformanceSnapshot(db.Model):
+    """Periodic performance metrics snapshot."""
+    __tablename__ = "performance_snapshots"
+    id            = db.Column(db.Integer, primary_key=True)
+    user_id       = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False)
+    timestamp     = db.Column(db.DateTime, default=datetime.utcnow)
+    bankroll      = db.Column(db.Float, default=0.0)
+    total_pnl     = db.Column(db.Float, default=0.0)
+    total_trades  = db.Column(db.Integer, default=0)
+    wins          = db.Column(db.Integer, default=0)
+    losses        = db.Column(db.Integer, default=0)
+    smart_exits   = db.Column(db.Integer, default=0)
+    max_drawdown_pct = db.Column(db.Float, default=0.0)
+    best_trade_pnl   = db.Column(db.Float, default=0.0)
+    worst_trade_pnl  = db.Column(db.Float, default=0.0)
+    avg_edge         = db.Column(db.Float, default=0.0)
+    avg_confidence   = db.Column(db.Float, default=0.0)
+    roi_pct          = db.Column(db.Float, default=0.0)
+
+    def to_dict(self):
+        return {
+            "timestamp":        self.timestamp.isoformat() if self.timestamp else None,
+            "bankroll":         self.bankroll,
+            "total_pnl":        self.total_pnl,
+            "total_trades":     self.total_trades,
+            "wins":             self.wins,
+            "losses":           self.losses,
+            "smart_exits":      self.smart_exits,
+            "win_rate":         round(self.wins / max(self.wins + self.losses, 1) * 100, 1),
+            "max_drawdown_pct": self.max_drawdown_pct,
+            "best_trade_pnl":   self.best_trade_pnl,
+            "worst_trade_pnl":  self.worst_trade_pnl,
+            "avg_edge":         self.avg_edge,
+            "avg_confidence":   self.avg_confidence,
+            "roi_pct":          self.roi_pct,
+        }
+
+
 class BotActivity(db.Model):
     """Flux d'activité temps réel."""
     __tablename__ = "bot_activity"

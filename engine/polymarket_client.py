@@ -225,6 +225,24 @@ class PolyMarketClient:
         except Exception as e:
             return {"ok": False, "error": str(e)}
 
+    def place_sell_order(self, token_id: str, side: str, size_usdc: float,
+                         price: float) -> dict:
+        """Sell (exit) a position on Polymarket."""
+        if not CLOB_OK or not self._client:
+            return {"ok": False, "error": "client non initialisé"}
+        try:
+            order_args = OrderArgs(
+                price=round(price, 4),
+                size=round(size_usdc, 2),
+                side=SELL,
+                token_id=token_id,
+            )
+            signed = self._client.create_order(order_args)
+            result = self._client.post_order(signed, OrderType.GTC)
+            return {"ok": True, "order_id": result.get("orderID", ""), "result": result}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
     def get_positions(self) -> list:
         """Positions ouvertes."""
         if not self._client:

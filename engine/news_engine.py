@@ -6,6 +6,7 @@ import hashlib
 import logging
 import time
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from typing import Optional
 import feedparser
@@ -120,7 +121,17 @@ class Article:
 
     def _score(self) -> int:
         text = (self.title + " " + self.summary).lower()
-        return sum(1 for kw in POLYMARKET_KEYWORDS if kw in text)
+        keyword_score = sum(1 for kw in POLYMARKET_KEYWORDS if kw in text)
+        # Recency bonus: articles < 1h get +3, < 3h get +2, < 6h get +1
+        if self.published:
+            age_hours = (datetime.now(timezone.utc) - self.published).total_seconds() / 3600
+            if age_hours < 1:
+                keyword_score += 3
+            elif age_hours < 3:
+                keyword_score += 2
+            elif age_hours < 6:
+                keyword_score += 1
+        return keyword_score
 
     def to_dict(self) -> dict:
         return {
@@ -150,65 +161,88 @@ class NewsEngine:
         self._last_refresh = 0.0
         self._stats = {"total_fetched": 0, "total_sources": 0}
 
+    def _fetch_single_feed(self, name: str, url: str) -> list:
+        """Fetch a single RSS feed. Returns list of (name, entry) tuples."""
+        results = []
+        try:
+            feed = feedparser.parse(url)
+            for entry in feed.entries[:8]:
+                results.append((name, entry))
+        except Exception as e:
+            logger.debug(f"[News] {name} erreur: {e}")
+        return results
+
     def refresh(self) -> int:
-        """Rafraîchit toutes les sources. Retourne le nb de nouveaux articles."""
+        """Rafraîchit toutes les sources en parallèle. Retourne le nb de nouveaux articles."""
+        import re
+        import calendar
+
+        all_entries = []
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            futures = {
+                pool.submit(self._fetch_single_feed, name, url): name
+                for name, url in RSS_FEEDS.items()
+            }
+            for future in as_completed(futures, timeout=30):
+                try:
+                    all_entries.extend(future.result())
+                except Exception as e:
+                    logger.debug(f"[News] feed future error: {e}")
+
         new_count = 0
-        for name, url in RSS_FEEDS.items():
+        for name, entry in all_entries:
+            title   = getattr(entry, "title", "").strip()
+            summary = getattr(entry, "summary", "") or getattr(entry, "description", "")
+            link    = getattr(entry, "link", "")
+            if not title or not link:
+                continue
             try:
-                feed = feedparser.parse(url)
-                for entry in feed.entries[:8]:  # Réduit : 20 → 8 par source (évite surcharge)
-                    title   = getattr(entry, "title", "").strip()
-                    summary = getattr(entry, "summary", "") or getattr(entry, "description", "")
-                    link    = getattr(entry, "link", "")
-                    if not title or not link:
-                        continue
-                    # Nettoyer le HTML dans le summary
-                    try:
-                        summary = BeautifulSoup(summary, "lxml").get_text(separator=" ")[:500]
-                    except Exception:
-                        summary = summary[:500]
-                    # Date de publication
-                    pub = None
-                    if hasattr(entry, "published_parsed") and entry.published_parsed:
-                        try:
-                            import calendar
-                            ts  = calendar.timegm(entry.published_parsed)
-                            pub = datetime.fromtimestamp(ts, tz=timezone.utc)
-                        except Exception:
-                            pass
-                    art = Article(name, title, summary, link, pub)
-                    with self._lock:
-                        # Déduplique par URL hash ET par titre normalisé (très strict)
-                        import re
-                        # Normalize title: lowercase, remove extra spaces, keep only words
-                        title_norm = re.sub(r'\s+', ' ', title.lower().strip())
-                        # Extract keywords (remove dates, years, symbols)
-                        title_keywords = ' '.join(re.findall(r'\w+', title_norm))
+                summary = BeautifulSoup(summary, "lxml").get_text(separator=" ")[:500]
+            except Exception:
+                summary = summary[:500]
+            pub = None
+            if hasattr(entry, "published_parsed") and entry.published_parsed:
+                try:
+                    ts  = calendar.timegm(entry.published_parsed)
+                    pub = datetime.fromtimestamp(ts, tz=timezone.utc)
+                except Exception:
+                    pass
+            art = Article(name, title, summary, link, pub)
+            with self._lock:
+                title_norm = re.sub(r'\s+', ' ', title.lower().strip())
+                title_keywords = ' '.join(re.findall(r'\w+', title_norm))
 
-                        is_duplicate = (art.uid in self._articles or
-                                       title_norm in self._titles_seen or
-                                       title_keywords in self._titles_seen)
+                is_duplicate = (art.uid in self._articles or
+                               title_norm in self._titles_seen or
+                               title_keywords in self._titles_seen)
 
-                        if not is_duplicate:
-                            self._articles[art.uid] = art
-                            self._titles_seen.add(title_norm)
-                            self._titles_seen.add(title_keywords)
-                            if art.score >= self.MIN_SCORE:
-                                self._new_since.append(art.uid)
-                            new_count += 1
-                        else:
-                            logger.debug(f"[News] Doublon ignoré: {title[:60]}… (src={name})")
-            except Exception as e:
-                logger.debug(f"[News] {name} erreur: {e}")
-        # Purge du buffer
+                if not is_duplicate:
+                    self._articles[art.uid] = art
+                    self._titles_seen.add(title_norm)
+                    self._titles_seen.add(title_keywords)
+                    if art.score >= self.MIN_SCORE:
+                        self._new_since.append(art.uid)
+                    new_count += 1
+
+        # Purge buffer + fix _titles_seen leak
         with self._lock:
             if len(self._articles) > self.MAX_BUFFER:
                 oldest = sorted(self._articles.values(), key=lambda a: a.published)
                 to_remove = oldest[:len(self._articles) - self.MAX_BUFFER]
                 for old in to_remove:
                     self._articles.pop(old.uid, None)
-                    # Nettoyer aussi les titres_seen
-                    self._titles_seen.discard(old.title.lower().strip())
+                    norm = re.sub(r'\s+', ' ', old.title.lower().strip())
+                    self._titles_seen.discard(norm)
+                    self._titles_seen.discard(' '.join(re.findall(r'\w+', norm)))
+            # Cap _titles_seen to 2x buffer to prevent unbounded growth
+            if len(self._titles_seen) > self.MAX_BUFFER * 3:
+                self._titles_seen = {
+                    re.sub(r'\s+', ' ', a.title.lower().strip())
+                    for a in self._articles.values()
+                } | {
+                    ' '.join(re.findall(r'\w+', re.sub(r'\s+', ' ', a.title.lower().strip())))
+                    for a in self._articles.values()
+                }
         self._last_refresh = time.time()
         self._stats["total_fetched"] += new_count
         logger.info(f"[News] refresh +{new_count} articles ({len(self._articles)} total)")
