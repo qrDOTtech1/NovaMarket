@@ -11,7 +11,7 @@ from flask import (Flask, render_template, request, redirect, url_for,
                    flash, session, jsonify)
 from flask_migrate import Migrate
 
-from models import db, User, PolyCredential, BotSession, Position, NewsLog, BotActivity, OllamaConfig
+from models import db, User, PolyCredential, BotSession, Position, NewsLog, BotActivity, OllamaConfig, PerformanceSnapshot
 from worker import BotManager, MARKETS_CACHE
 from engine.polymarket_client import PolyMarketClient
 from engine.circuit_breaker import CircuitBreaker
@@ -821,6 +821,116 @@ def _register_routes(app):
             "deleted": deleted,
             "message": "Tracker réinitialisé — tous les marchés seront ré-analysés",
         })
+
+    # ── Performance Analytics ─────────────────────────────────────────────────
+
+    @app.route("/api/analytics")
+    @login_required
+    def api_analytics():
+        """Compute live performance analytics from position history."""
+        uid = session["user_id"]
+        positions = Position.query.filter_by(user_id=uid).order_by(Position.timestamp).all()
+        active_session = BotSession.query.filter_by(user_id=uid, status="running").first()
+
+        if not positions:
+            return jsonify({"ok": True, "analytics": {
+                "total_trades": 0, "wins": 0, "losses": 0, "smart_exits": 0,
+                "win_rate": 0, "total_pnl": 0, "roi_pct": 0,
+                "max_drawdown_pct": 0, "best_trade_pnl": 0, "worst_trade_pnl": 0,
+                "avg_edge": 0, "avg_confidence": 0,
+                "by_category": {}, "by_confidence_band": {},
+                "pnl_curve": [], "open_positions": 0,
+            }})
+
+        closed = [p for p in positions if p.result in ("WIN", "LOSS")]
+        wins = [p for p in closed if p.result == "WIN"]
+        losses = [p for p in closed if p.result == "LOSS"]
+        open_pos = [p for p in positions if p.result == "OPEN"]
+
+        total_pnl = sum(p.pnl_usd or 0 for p in closed)
+        total_invested = sum(p.size_usd for p in closed) if closed else 1
+        roi_pct = round(total_pnl / max(total_invested, 1) * 100, 2)
+
+        # Max drawdown from PnL curve
+        cumulative = 0.0
+        peak = 0.0
+        max_dd = 0.0
+        pnl_curve = []
+        for p in closed:
+            cumulative += (p.pnl_usd or 0)
+            peak = max(peak, cumulative)
+            dd = (peak - cumulative) / max(peak, 1) if peak > 0 else 0
+            max_dd = max(max_dd, dd)
+            pnl_curve.append({
+                "ts": p.timestamp.isoformat() if p.timestamp else "",
+                "pnl": round(cumulative, 2),
+            })
+
+        # Smart exits count
+        from sqlalchemy import func
+        smart_exits = BotActivity.query.filter(
+            BotActivity.user_id == uid,
+            BotActivity.message.like("%SMART EXIT%")
+        ).count()
+
+        # Stats by category
+        by_category = {}
+        for p in closed:
+            cat = p.category or "general"
+            if cat not in by_category:
+                by_category[cat] = {"trades": 0, "wins": 0, "pnl": 0.0}
+            by_category[cat]["trades"] += 1
+            if p.result == "WIN":
+                by_category[cat]["wins"] += 1
+            by_category[cat]["pnl"] += (p.pnl_usd or 0)
+        for cat in by_category:
+            t = by_category[cat]["trades"]
+            by_category[cat]["pnl"] = round(by_category[cat]["pnl"], 2)
+            by_category[cat]["win_rate"] = round(by_category[cat]["wins"] / max(t, 1) * 100, 1)
+
+        # Stats by confidence band
+        bands = {"85-100": [], "70-84": [], "55-69": [], "0-54": []}
+        for p in closed:
+            c = p.ai_confidence or 0
+            if c >= 85:   bands["85-100"].append(p)
+            elif c >= 70: bands["70-84"].append(p)
+            elif c >= 55: bands["55-69"].append(p)
+            else:         bands["0-54"].append(p)
+        by_confidence = {}
+        for band, ps in bands.items():
+            if not ps:
+                continue
+            w = sum(1 for p in ps if p.result == "WIN")
+            pnl = sum(p.pnl_usd or 0 for p in ps)
+            by_confidence[band] = {
+                "trades": len(ps), "wins": w,
+                "win_rate": round(w / len(ps) * 100, 1),
+                "pnl": round(pnl, 2),
+            }
+
+        edges = [p.edge_at_entry for p in closed if p.edge_at_entry]
+        confs = [p.ai_confidence for p in closed if p.ai_confidence]
+
+        analytics = {
+            "total_trades":     len(closed),
+            "wins":             len(wins),
+            "losses":           len(losses),
+            "smart_exits":      smart_exits,
+            "win_rate":         round(len(wins) / max(len(closed), 1) * 100, 1),
+            "total_pnl":        round(total_pnl, 2),
+            "roi_pct":          roi_pct,
+            "max_drawdown_pct": round(max_dd * 100, 2),
+            "best_trade_pnl":   round(max((p.pnl_usd or 0) for p in closed), 2) if closed else 0,
+            "worst_trade_pnl":  round(min((p.pnl_usd or 0) for p in closed), 2) if closed else 0,
+            "avg_edge":         round(sum(edges) / max(len(edges), 1) * 100, 1),
+            "avg_confidence":   round(sum(confs) / max(len(confs), 1), 1),
+            "by_category":      by_category,
+            "by_confidence_band": by_confidence,
+            "pnl_curve":        pnl_curve[-100:],
+            "open_positions":   len(open_pos),
+        }
+
+        return jsonify({"ok": True, "analytics": analytics})
 
     # ── Healthcheck Railway ───────────────────────────────────────────────────
 

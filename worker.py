@@ -18,6 +18,7 @@ from engine.ai_analyst import (batch_analyze, check_ai_available,
                                 _market_key)
 from engine.market_tracker import MarketTracker
 from engine.risk import get_size, expected_value, roi_if_win, MAX_ACTIVE_POSITIONS
+from engine.smart_exit import evaluate_exit, ExitReason
 from engine.circuit_breaker import CircuitBreaker
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,9 @@ class MarketWorker(threading.Thread):
         self._last_news_refresh        = 0.0
         self._last_pos_check           = 0.0
         self._last_market_signal_cycle = 0.0
+        self._last_log_prune           = 0.0
+        self._last_balance_fetch       = 0.0
+        self._cached_bankroll          = 0.0
         # Marchés analysés cette session — set in-memory + CSV persistant
         self._analyzed_this_session: set = set()
         # Tracker CSV : persiste entre redémarrages du worker (même container Railway)
@@ -69,16 +73,19 @@ class MarketWorker(threading.Thread):
                                 emoji=emoji, message=msg)
             db.session.add(entry)
             db.session.commit()
-            # Garder max 300 lignes
-            old = (db.session.query(BotActivity.id)
-                   .filter_by(user_id=self.user_id)
-                   .order_by(BotActivity.id.desc())
-                   .offset(300).all())
-            if old:
-                db.session.query(BotActivity).filter(
-                    BotActivity.id.in_([r[0] for r in old])
-                ).delete(synchronize_session=False)
-                db.session.commit()
+            # Prune old logs every 5 minutes instead of every call
+            now = time.time()
+            if now - self._last_log_prune > 300:
+                self._last_log_prune = now
+                old = (db.session.query(BotActivity.id)
+                       .filter_by(user_id=self.user_id)
+                       .order_by(BotActivity.id.desc())
+                       .offset(300).all())
+                if old:
+                    db.session.query(BotActivity).filter(
+                        BotActivity.id.in_([r[0] for r in old])
+                    ).delete(synchronize_session=False)
+                    db.session.commit()
         except Exception as e:
             logger.warning(f"[NM] _log error: {e}")
             db.session.rollback()
@@ -158,7 +165,11 @@ class MarketWorker(threading.Thread):
                     )
                     bankroll = max(SIM_BANKROLL - invested, 1.0)
                 else:
-                    bankroll = client.get_balance()
+                    # Cache balance for 60s to reduce API calls
+                    if now - self._last_balance_fetch > 60:
+                        self._cached_bankroll = client.get_balance()
+                        self._last_balance_fetch = now
+                    bankroll = self._cached_bankroll
                 cb = CircuitBreaker.get(self.user_id)
 
                 if cb and cb.daily_triggered:
@@ -658,6 +669,62 @@ class MarketWorker(threading.Thread):
                         self._log("warning", "🛡️",
                                   f"LOSS [{pos.side}] {pos.market_question[:60]}… | "
                                   f"{pnl:.2f}$")
+                    db.session.commit()
+                    continue
+
+                # Smart Exit — evaluate profit-taking / edge erosion
+                if pos.current_price and pos.entry_price and pos.estimated_prob:
+                    hours_open = None
+                    if pos.timestamp:
+                        from datetime import datetime
+                        hours_open = (datetime.utcnow() - pos.timestamp).total_seconds() / 3600
+
+                    exit_signal = evaluate_exit(
+                        side=pos.side,
+                        entry_price=pos.entry_price,
+                        current_price=pos.current_price,
+                        estimated_prob=pos.estimated_prob,
+                        ai_confidence=pos.ai_confidence or 50,
+                        hours_open=hours_open,
+                    )
+
+                    if exit_signal.should_exit:
+                        pnl_pct = exit_signal.unrealized_pnl_pct
+                        pnl_usd = round(pos.size_usd * pnl_pct, 4)
+                        result = "WIN" if pnl_usd >= 0 else "LOSS"
+
+                        if not self.simulate:
+                            token_ids = client.get_token_ids(market)
+                            token_id = token_ids.get(pos.side)
+                            if token_id:
+                                sell_result = client.place_sell_order(
+                                    token_id, pos.side, pos.size_usd, pos.current_price
+                                )
+                                if not sell_result.get("ok"):
+                                    self._log("warning", "⚠️",
+                                              f"Smart exit sell failed: {sell_result.get('error', '')[:60]}")
+                                    db.session.commit()
+                                    continue
+
+                        pos.pnl_usd = pnl_usd
+                        pos.result = result
+                        pos.exit_price = pos.current_price
+                        self._update_session(pnl_usd, result)
+                        CircuitBreaker.record_trade(
+                            self.user_id, pnl_usd, bankroll, pos.category, pos.size_usd
+                        )
+
+                        pfx = "[SIM] " if self.simulate else ""
+                        reason_tag = exit_signal.reason.value
+                        self._log(
+                            "success" if pnl_usd >= 0 else "warning",
+                            "💰" if pnl_usd >= 0 else "🛑",
+                            f"{pfx}SMART EXIT [{reason_tag}] {pos.side} "
+                            f"{pos.market_question[:50]}… | "
+                            f"PnL {pnl_usd:+.2f}$ ({pnl_pct:+.0%}) | "
+                            f"{exit_signal.detail}"
+                        )
+
                 db.session.commit()
             except Exception as e:
                 logger.error(f"[NM] check_positions error: {e}")
