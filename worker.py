@@ -626,6 +626,15 @@ class MarketWorker(threading.Thread):
                     current_price = current_yes if pos.side == "YES" else (1 - current_yes)
                     pos.current_price = current_price
 
+                # Adverse move detection: flag if market moved >20% against position
+                if current_price and pos.entry_price:
+                    move = (current_price - pos.entry_price) / max(pos.entry_price, 0.01)
+                    if move < -0.20:
+                        self._log("warning", "📉",
+                                  f"Adverse move on [{pos.market_question[:50]}…] "
+                                  f"entry={pos.entry_price:.0%} now={current_price:.0%} "
+                                  f"({move:+.0%})")
+
                 # Vérifier si résolu
                 resolved   = market.get("resolved", False)
                 resolution = market.get("resolution", "")

@@ -120,7 +120,14 @@ class Article:
 
     def _score(self) -> int:
         text = (self.title + " " + self.summary).lower()
-        return sum(1 for kw in POLYMARKET_KEYWORDS if kw in text)
+        keyword_hits = sum(1 for kw in POLYMARKET_KEYWORDS if kw in text)
+        # Freshness bonus: articles < 1h get +3, < 4h get +1
+        age_hours = (datetime.now(timezone.utc) - self.published).total_seconds() / 3600
+        if age_hours < 1:
+            keyword_hits += 3
+        elif age_hours < 4:
+            keyword_hits += 1
+        return keyword_hits
 
     def to_dict(self) -> dict:
         return {

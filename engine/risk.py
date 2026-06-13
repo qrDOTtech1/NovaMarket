@@ -1,34 +1,28 @@
 """
-Risk Engine NovaMarket — Kelly AGRESSIF pour Polymarket.
-
-Philosophie Polymarket :
-  • Chaque marché se résout à 0 ou 1 (binaire) — pas de sortie partielle
-  • Avec une vraie edge, le Kelly plein maximise la croissance exponentielle
-  • L'objectif est +200% — cela nécessite des positions significatives
-  • La protection vient de la QUALITÉ des signaux, pas de la taille des mises
+Risk Engine NovaMarket — Kelly criterion for Polymarket.
 
 Kelly dynamique selon la confiance :
-  conf >= 85% → Kelly × 1.0  (plein Kelly)
-  conf >= 70% → Kelly × 0.75
-  conf >= 55% → Kelly × 0.50
-  conf <  55% → Kelly × 0.25 (conservateur)
+  conf >= 85% → Kelly × 0.75  (3/4 Kelly — never full Kelly on prediction markets)
+  conf >= 70% → Kelly × 0.50
+  conf >= 55% → Kelly × 0.35
+  conf <  55% → Kelly × 0.20 (conservateur)
 """
 
 # ── Limites ───────────────────────────────────────────────────────────────────
-MAX_BANKROLL_PCT_PER_TRADE  = 0.25   # max 25% du bankroll par trade
-MAX_BANKROLL_PCT_TOTAL      = 0.90   # peut exposer jusqu'à 90% simultanément
-MAX_BANKROLL_PCT_CATEGORY   = 0.45   # max 45% par catégorie
-DAILY_LOSS_LIMIT_PCT        = 0.40   # stop seulement si -40% sur la journée
-MIN_EDGE_TO_TRADE           = 0.08   # edge minimum 8%
-MIN_CONFIDENCE_TO_TRADE     = 45     # confiance minimum 45%
-MAX_ACTIVE_POSITIONS        = 999    # pas de limite artificielle — le bankroll est la seule limite
+MAX_BANKROLL_PCT_PER_TRADE  = 0.15   # max 15% du bankroll par trade
+MAX_BANKROLL_PCT_TOTAL      = 0.75   # max 75% exposed simultaneously
+MAX_BANKROLL_PCT_CATEGORY   = 0.35   # max 35% par catégorie
+DAILY_LOSS_LIMIT_PCT        = 0.25   # stop at -25% daily loss
+MIN_EDGE_TO_TRADE           = 0.12   # aligned with ai_analyst signal threshold
+MIN_CONFIDENCE_TO_TRADE     = 60     # aligned with ai_analyst signal threshold
+MAX_ACTIVE_POSITIONS        = 20     # reasonable cap to prevent over-diversification
 
 # ── Kelly fractions dynamiques ────────────────────────────────────────────────
 def _kelly_fraction(confidence: int) -> float:
-    if confidence >= 85: return 1.00   # plein Kelly — signal béton
-    if confidence >= 70: return 0.75   # 3/4 Kelly
-    if confidence >= 55: return 0.50   # demi Kelly
-    return 0.25                        # quart Kelly — signal faible
+    if confidence >= 85: return 0.75   # 3/4 Kelly — never bet full Kelly
+    if confidence >= 70: return 0.50   # half Kelly
+    if confidence >= 55: return 0.35   # conservative
+    return 0.20                        # very conservative — marginal signal
 
 
 def kelly_size(prob_ai: float, prob_market: float, bankroll: float,

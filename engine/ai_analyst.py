@@ -477,18 +477,8 @@ def batch_analyze(articles: list, markets: list,
                 logger.warning(f"[AI] IA indisponible: {e} — arrêt du batch")
                 raise
             except Exception as e:
-                # Si erreur parsage ou timeout, essaye une heuristique simple
-                logger.warning(f"[AI] estimate_probability erreur: {e} — fallback heuristique")
-                analysis = {
-                    "estimated_prob": current_prob + (0.15 if art.score > 2 else 0.05),
-                    "confidence":     50 + (art.score * 5),
-                    "reasoning":      f"Signal basé sur actualité (score={art.score})",
-                    "direction":      "UP" if art.score > 2 else "NEUTRAL",
-                    "exit_trigger":   "Évolution de la situation décrite",
-                    "thesis":         f"Impact de : {art.title[:60]}…",
-                }
-                analysis["estimated_prob"] = max(0.01, min(0.99, analysis["estimated_prob"]))
-                analysis["confidence"] = max(0, min(100, analysis["confidence"]))
+                logger.warning(f"[AI] estimate_probability erreur: {e} — skipping market (no heuristic fallback)")
+                continue
 
             # Marquer dans les deux sets — plus jamais appelé (signal ou non)
             # mkey est TOUJOURS non-vide → garantit le blocage même si conditionId vide
