@@ -280,6 +280,24 @@
   .no-data { text-align:center; padding:2rem 1rem; color:var(--nova-muted); font-size:.82rem; }
   .no-data-icon { font-size:1.8rem; margin-bottom:.5rem; }
   .cb-alert { background:rgba(239,83,80,.1); border:1px solid rgba(239,83,80,.25); border-radius:8px; padding:.75rem 1rem; color:#ef9a9a; font-size:.82rem; display:flex; align-items:center; gap:.6rem; margin-bottom:1rem; }
+
+  /* ── Analytics ── */
+  .an-cat-row { display:flex; align-items:center; gap:.6rem; padding:.45rem .6rem; border-bottom:1px solid rgba(255,255,255,.04); font-size:.78rem; }
+  .an-cat-name { min-width:80px; font-weight:600; color:var(--nova-text); text-transform:capitalize; }
+  .an-cat-bar { flex:1; height:18px; background:rgba(255,255,255,.05); border-radius:3px; position:relative; overflow:hidden; }
+  .an-cat-fill { height:100%; border-radius:3px; transition:width .4s; min-width:2px; }
+  .an-cat-fill.pos { background:rgba(102,187,106,.5); }
+  .an-cat-fill.neg { background:rgba(239,83,80,.5); }
+  .an-cat-stats { min-width:140px; display:flex; gap:.6rem; font-size:.72rem; color:var(--nova-muted); text-align:right; }
+  .an-side-card { background:var(--nova-card-2); border:1px solid var(--nova-border); border-radius:10px; padding:.8rem 1rem; margin-bottom:.5rem; }
+  .an-daily-cell { padding:.35rem .55rem; border-radius:6px; font-size:.72rem; font-weight:600; font-family:monospace; }
+  .an-daily-cell.pos { background:rgba(102,187,106,.12); color:#a5d6a7; }
+  .an-daily-cell.neg { background:rgba(239,83,80,.12); color:#ef9a9a; }
+  .an-daily-cell.zero { background:rgba(255,255,255,.04); color:var(--nova-muted); }
+  .an-edge-row { display:flex; align-items:center; gap:.5rem; padding:.3rem .4rem; font-size:.73rem; border-bottom:1px solid rgba(255,255,255,.03); }
+  .an-edge-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .an-edge-dot.correct { background:#81c995; }
+  .an-edge-dot.wrong   { background:#ef9a9a; }
 </style>
 {% endblock %}
 {% block content %}
@@ -500,6 +518,9 @@
         <button class="tab-btn" onclick="switchTab('tracker',this);loadTracker()">
           📈 Tracker <span id="tracker-badge" class="badge badge-muted" style="margin-left:.3rem;display:none;">0</span>
         </button>
+        <button class="tab-btn" onclick="switchTab('analytics',this);loadAnalytics()">
+          📊 Analytics
+        </button>
       </div>
       {% if open_positions %}
       <div style="display:flex;gap:.4rem;align-items:center;flex-wrap:wrap;" id="positions-actions">
@@ -663,6 +684,47 @@
       {% else %}
       <div class="no-data"><div class="no-data-icon">🏁</div><p>Aucun trade clôturé pour l'instant</p></div>
       {% endif %}
+    </div>
+
+    <!-- Analytics -->
+    <div class="tab-panel" id="tab-analytics">
+      <div id="analytics-loading" class="no-data"><div class="no-data-icon">📊</div><p>Chargement des analytics...</p></div>
+      <div id="analytics-content" style="display:none;">
+        <!-- Summary KPIs -->
+        <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);margin-bottom:1.2rem;" id="an-kpis"></div>
+
+        <!-- Two-column layout -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
+          <!-- Category breakdown -->
+          <div>
+            <div style="font-size:.72rem;text-transform:uppercase;color:var(--nova-muted);font-weight:700;letter-spacing:.05em;margin-bottom:.6rem;">Performance par catégorie</div>
+            <div id="an-categories"></div>
+          </div>
+          <!-- Side breakdown -->
+          <div>
+            <div style="font-size:.72rem;text-transform:uppercase;color:var(--nova-muted);font-weight:700;letter-spacing:.05em;margin-bottom:.6rem;">YES vs NO</div>
+            <div id="an-sides"></div>
+          </div>
+        </div>
+
+        <!-- Cumulative PnL chart (text-based) -->
+        <div style="margin-bottom:1rem;">
+          <div style="font-size:.72rem;text-transform:uppercase;color:var(--nova-muted);font-weight:700;letter-spacing:.05em;margin-bottom:.6rem;">PnL cumulé dans le temps</div>
+          <div id="an-pnl-chart" style="display:flex;align-items:flex-end;gap:2px;height:120px;background:var(--nova-bg);border:1px solid var(--nova-border);border-radius:8px;padding:.6rem;overflow-x:auto;"></div>
+        </div>
+
+        <!-- Daily PnL -->
+        <div style="margin-bottom:1rem;">
+          <div style="font-size:.72rem;text-transform:uppercase;color:var(--nova-muted);font-weight:700;letter-spacing:.05em;margin-bottom:.6rem;">PnL journalier</div>
+          <div id="an-daily" style="display:flex;flex-wrap:wrap;gap:.4rem;"></div>
+        </div>
+
+        <!-- Edge accuracy -->
+        <div>
+          <div style="font-size:.72rem;text-transform:uppercase;color:var(--nova-muted);font-weight:700;letter-spacing:.05em;margin-bottom:.6rem;">Précision des signaux IA</div>
+          <div id="an-edge" style="max-height:200px;overflow-y:auto;"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1034,6 +1096,123 @@
   if ({{ 'true' if is_running else 'false' }}) {
     setInterval(pollActivity, 4000);
     setInterval(pollBalance,  30000);
+  }
+
+  /* ── Analytics ────────────────────────────────────────────────── */
+  let _analyticsLoaded = false;
+  function loadAnalytics() {
+    if (_analyticsLoaded) return;
+    fetch('/api/analytics').then(r=>r.json()).then(d=>{
+      _analyticsLoaded = true;
+      document.getElementById('analytics-loading').style.display = 'none';
+      document.getElementById('analytics-content').style.display = '';
+      if (!d.ok || !d.summary.total_trades) {
+        document.getElementById('analytics-content').innerHTML =
+          '<div class="no-data"><div class="no-data-icon">📊</div><p>Aucune donnée — effectue des trades pour voir les analytics</p></div>';
+        return;
+      }
+      const s = d.summary;
+      // KPIs
+      document.getElementById('an-kpis').innerHTML = [
+        kpiHtml(s.total_pnl >= 0 ? '+'+s.total_pnl.toFixed(2)+'$' : s.total_pnl.toFixed(2)+'$', 'PnL Total', s.total_pnl >= 0 ? 'pos' : 'neg'),
+        kpiHtml(s.winrate+'%', 'Win Rate', s.winrate >= 55 ? 'pos' : s.winrate < 45 ? 'neg' : ''),
+        kpiHtml(s.profit_factor > 0 ? s.profit_factor.toFixed(2) : '—', 'Profit Factor', s.profit_factor >= 1.5 ? 'pos' : s.profit_factor < 1 ? 'neg' : 'teal'),
+        kpiHtml(s.expectancy_per_trade >= 0 ? '+'+s.expectancy_per_trade.toFixed(2)+'$' : s.expectancy_per_trade.toFixed(2)+'$', 'Expectancy / Trade', s.expectancy_per_trade >= 0 ? 'pos' : 'neg'),
+        kpiHtml(s.avg_win > 0 ? '+'+s.avg_win.toFixed(2)+'$' : '—', 'Avg Win', 'pos'),
+        kpiHtml(s.avg_loss > 0 ? '-'+s.avg_loss.toFixed(2)+'$' : '—', 'Avg Loss', 'neg'),
+      ].join('');
+
+      // Categories
+      const cats = d.by_category;
+      const catKeys = Object.keys(cats).sort((a,b) => cats[b].pnl - cats[a].pnl);
+      const maxCatPnl = Math.max(...catKeys.map(k=>Math.abs(cats[k].pnl)), 1);
+      document.getElementById('an-categories').innerHTML = catKeys.map(k=>{
+        const c = cats[k];
+        const pct = Math.min(Math.abs(c.pnl) / maxCatPnl * 100, 100);
+        const cls = c.pnl >= 0 ? 'pos' : 'neg';
+        return '<div class="an-cat-row">'+
+          '<span class="an-cat-name">'+escHtml(k)+'</span>'+
+          '<div class="an-cat-bar"><div class="an-cat-fill '+cls+'" style="width:'+pct+'%"></div></div>'+
+          '<div class="an-cat-stats">'+
+            '<span>'+(c.pnl>=0?'+':'')+c.pnl.toFixed(2)+'$</span>'+
+            '<span>'+c.winrate+'%</span>'+
+            '<span>'+c.trades+' trades</span>'+
+          '</div>'+
+        '</div>';
+      }).join('');
+
+      // Sides
+      const sides = d.by_side;
+      document.getElementById('an-sides').innerHTML = ['YES','NO'].map(s=>{
+        const sd = sides[s] || {trades:0,pnl:0,winrate:0};
+        const cls = sd.pnl >= 0 ? 'pos' : 'neg';
+        return '<div class="an-side-card">'+
+          '<div style="display:flex;justify-content:space-between;align-items:center;">'+
+            '<span class="badge '+(s==='YES'?'badge-green':'badge-red')+'" style="font-size:.8rem;">'+s+'</span>'+
+            '<span class="kpi-val '+cls+'" style="font-size:1rem;">'+(sd.pnl>=0?'+':'')+sd.pnl.toFixed(2)+'$</span>'+
+          '</div>'+
+          '<div style="display:flex;gap:.8rem;margin-top:.4rem;font-size:.72rem;color:var(--nova-muted);">'+
+            '<span>'+sd.trades+' trades</span>'+
+            '<span>WR: '+sd.winrate+'%</span>'+
+          '</div>'+
+        '</div>';
+      }).join('');
+
+      // Cumulative PnL chart (bar chart)
+      const pnlData = d.cumulative_pnl;
+      if (pnlData.length) {
+        const minPnl = Math.min(...pnlData.map(p=>p.pnl), 0);
+        const maxPnl = Math.max(...pnlData.map(p=>p.pnl), 1);
+        const range  = Math.max(maxPnl - minPnl, 1);
+        const zeroY  = ((0 - minPnl) / range) * 100;
+        const chart  = document.getElementById('an-pnl-chart');
+        const barW   = Math.max(Math.min(600 / pnlData.length, 12), 3);
+        chart.innerHTML = pnlData.map((p,i)=>{
+          const h = ((p.pnl - minPnl) / range) * 100;
+          const color = p.pnl >= 0 ? 'rgba(102,187,106,.7)' : 'rgba(239,83,80,.7)';
+          return '<div title="'+p.pnl.toFixed(2)+'$ (trade #'+p.trade_id+')" style="width:'+barW+'px;height:'+h+'%;background:'+color+';border-radius:2px 2px 0 0;flex-shrink:0;transition:height .3s;"></div>';
+        }).join('');
+      }
+
+      // Daily PnL
+      const daily = d.daily_pnl;
+      const days  = Object.keys(daily);
+      document.getElementById('an-daily').innerHTML = days.map(day=>{
+        const v   = daily[day];
+        const cls = v > 0 ? 'pos' : v < 0 ? 'neg' : 'zero';
+        const lbl = day.slice(5); // MM-DD
+        return '<div class="an-daily-cell '+cls+'" title="'+day+'">'+lbl+': '+(v>=0?'+':'')+v.toFixed(2)+'$</div>';
+      }).join('');
+
+      // Edge accuracy
+      const edges = d.edge_accuracy;
+      if (edges.length) {
+        const correct = edges.filter(e=>e.correct).length;
+        const total   = edges.length;
+        const accPct  = (correct/total*100).toFixed(1);
+        document.getElementById('an-edge').innerHTML =
+          '<div style="margin-bottom:.5rem;font-size:.78rem;color:var(--nova-text);">Précision: <strong style="color:'+(correct/total>=.55?'#81c995':'#ef9a9a')+';">'+accPct+'%</strong> ('+correct+'/'+total+' trades correctement prédits)</div>'+
+          edges.slice(0,30).map(e=>{
+            return '<div class="an-edge-row">'+
+              '<span class="an-edge-dot '+(e.correct?'correct':'wrong')+'"></span>'+
+              '<span style="color:var(--nova-muted);">'+e.category+'</span>'+
+              '<span>edge '+(e.edge*100).toFixed(1)+'%</span>'+
+              '<span>conf '+e.confidence+'%</span>'+
+              '<span>IA='+(e.estimated_prob*100).toFixed(0)+'% mkt='+(e.entry_price*100).toFixed(0)+'%</span>'+
+              '<span class="badge '+(e.correct?'badge-green':'badge-red')+'" style="font-size:.6rem;">'+(e.correct?'OK':'MISS')+'</span>'+
+            '</div>';
+          }).join('');
+      } else {
+        document.getElementById('an-edge').innerHTML = '<div class="no-data" style="padding:.5rem;"><p>Pas encore de données</p></div>';
+      }
+    }).catch(()=>{
+      document.getElementById('analytics-loading').innerHTML =
+        '<div class="no-data"><div class="no-data-icon">❌</div><p>Erreur de chargement</p></div>';
+    });
+  }
+
+  function kpiHtml(val, lbl, cls) {
+    return '<div class="kpi"><div class="kpi-val '+(cls||'')+'">'+val+'</div><div class="kpi-lbl">'+lbl+'</div></div>';
   }
 </script>
 {% endblock %}

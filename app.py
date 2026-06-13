@@ -822,6 +822,155 @@ def _register_routes(app):
             "message": "Tracker réinitialisé — tous les marchés seront ré-analysés",
         })
 
+    # ── Performance Analytics ────────────────────────────────────────────────
+
+    @app.route("/api/analytics")
+    @login_required
+    def api_analytics():
+        """
+        Performance analytics: PnL over time, category breakdown, edge accuracy,
+        signal quality metrics. Powers the Analytics dashboard tab.
+        """
+        from collections import defaultdict
+        uid = session["user_id"]
+
+        all_pos = (Position.query
+                   .filter(Position.user_id == uid,
+                           Position.result.in_(["WIN", "LOSS"]))
+                   .order_by(Position.timestamp.asc())
+                   .all())
+
+        if not all_pos:
+            return jsonify({
+                "ok": True,
+                "cumulative_pnl": [],
+                "by_category": {},
+                "edge_accuracy": [],
+                "summary": {
+                    "total_trades": 0, "wins": 0, "losses": 0,
+                    "winrate": 0, "total_pnl": 0, "avg_edge": 0,
+                    "avg_confidence": 0, "best_category": "",
+                    "worst_category": "", "profit_factor": 0,
+                    "avg_win": 0, "avg_loss": 0,
+                    "expectancy_per_trade": 0,
+                },
+                "daily_pnl": {},
+                "by_side": {"YES": {"trades": 0, "pnl": 0, "winrate": 0},
+                            "NO":  {"trades": 0, "pnl": 0, "winrate": 0}},
+            })
+
+        # Cumulative PnL over time
+        cumulative = []
+        running_pnl = 0.0
+        for p in all_pos:
+            running_pnl += (p.pnl_usd or 0)
+            cumulative.append({
+                "timestamp": p.timestamp.isoformat(),
+                "pnl": round(running_pnl, 2),
+                "trade_id": p.id,
+                "result": p.result,
+            })
+
+        # Category breakdown
+        by_cat = defaultdict(lambda: {"trades": 0, "wins": 0, "losses": 0,
+                                       "pnl": 0.0, "total_edge": 0.0,
+                                       "total_confidence": 0})
+        for p in all_pos:
+            cat = p.category or "general"
+            by_cat[cat]["trades"] += 1
+            by_cat[cat]["pnl"] += (p.pnl_usd or 0)
+            by_cat[cat]["total_edge"] += (p.edge_at_entry or 0)
+            by_cat[cat]["total_confidence"] += (p.ai_confidence or 0)
+            if p.result == "WIN":
+                by_cat[cat]["wins"] += 1
+            else:
+                by_cat[cat]["losses"] += 1
+
+        for cat, data in by_cat.items():
+            t = data["wins"] + data["losses"]
+            data["winrate"] = round(data["wins"] / t * 100, 1) if t else 0
+            data["avg_edge"] = round(data["total_edge"] / t, 4) if t else 0
+            data["avg_confidence"] = round(data["total_confidence"] / t) if t else 0
+            data["pnl"] = round(data["pnl"], 2)
+            del data["total_edge"]
+            del data["total_confidence"]
+
+        # Edge accuracy: compare AI estimated_prob vs actual outcome
+        edge_data = []
+        for p in all_pos:
+            if p.estimated_prob and p.entry_price:
+                actual = 1.0 if p.result == "WIN" else 0.0
+                edge_data.append({
+                    "estimated_prob": round(p.estimated_prob, 3),
+                    "entry_price": round(p.entry_price, 3),
+                    "edge": round(p.edge_at_entry or 0, 4),
+                    "confidence": p.ai_confidence or 0,
+                    "actual": actual,
+                    "correct": (p.estimated_prob > p.entry_price) == (actual == 1.0),
+                    "category": p.category or "general",
+                })
+
+        # Daily PnL
+        daily = defaultdict(float)
+        for p in all_pos:
+            day_key = p.timestamp.strftime("%Y-%m-%d")
+            daily[day_key] += (p.pnl_usd or 0)
+        daily_pnl = {k: round(v, 2) for k, v in sorted(daily.items())}
+
+        # Side breakdown (YES vs NO)
+        by_side = {"YES": {"trades": 0, "wins": 0, "pnl": 0.0},
+                   "NO":  {"trades": 0, "wins": 0, "pnl": 0.0}}
+        for p in all_pos:
+            s = p.side if p.side in ("YES", "NO") else "YES"
+            by_side[s]["trades"] += 1
+            by_side[s]["pnl"] += (p.pnl_usd or 0)
+            if p.result == "WIN":
+                by_side[s]["wins"] += 1
+        for s in by_side:
+            t = by_side[s]["trades"]
+            by_side[s]["winrate"] = round(by_side[s]["wins"] / t * 100, 1) if t else 0
+            by_side[s]["pnl"] = round(by_side[s]["pnl"], 2)
+
+        # Summary stats
+        wins = sum(1 for p in all_pos if p.result == "WIN")
+        losses = sum(1 for p in all_pos if p.result == "LOSS")
+        total = wins + losses
+        total_pnl = sum(p.pnl_usd or 0 for p in all_pos)
+        win_pnls = [p.pnl_usd for p in all_pos if p.result == "WIN" and p.pnl_usd]
+        loss_pnls = [abs(p.pnl_usd) for p in all_pos if p.result == "LOSS" and p.pnl_usd]
+        gross_profit = sum(win_pnls) if win_pnls else 0
+        gross_loss = sum(loss_pnls) if loss_pnls else 0
+
+        cat_pnls = {cat: data["pnl"] for cat, data in by_cat.items()}
+        best_cat = max(cat_pnls, key=cat_pnls.get) if cat_pnls else ""
+        worst_cat = min(cat_pnls, key=cat_pnls.get) if cat_pnls else ""
+
+        summary = {
+            "total_trades": total,
+            "wins": wins,
+            "losses": losses,
+            "winrate": round(wins / total * 100, 1) if total else 0,
+            "total_pnl": round(total_pnl, 2),
+            "avg_edge": round(sum(p.edge_at_entry or 0 for p in all_pos) / total, 4) if total else 0,
+            "avg_confidence": round(sum(p.ai_confidence or 0 for p in all_pos) / total) if total else 0,
+            "best_category": best_cat,
+            "worst_category": worst_cat,
+            "profit_factor": round(gross_profit / gross_loss, 2) if gross_loss > 0 else 0,
+            "avg_win": round(sum(win_pnls) / len(win_pnls), 2) if win_pnls else 0,
+            "avg_loss": round(sum(loss_pnls) / len(loss_pnls), 2) if loss_pnls else 0,
+            "expectancy_per_trade": round(total_pnl / total, 2) if total else 0,
+        }
+
+        return jsonify({
+            "ok": True,
+            "cumulative_pnl": cumulative,
+            "by_category": dict(by_cat),
+            "edge_accuracy": edge_data,
+            "summary": summary,
+            "daily_pnl": daily_pnl,
+            "by_side": by_side,
+        })
+
     # ── Healthcheck Railway ───────────────────────────────────────────────────
 
     @app.route("/health")

@@ -5,18 +5,21 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional
 from engine.risk import DAILY_LOSS_LIMIT_PCT
 
-MAX_CONSECUTIVE_LOSSES = 4
-COOLDOWN_AFTER_STREAK  = 1800   # 30 min après 4 pertes d'affilée
+MAX_CONSECUTIVE_LOSSES = 3
+COOLDOWN_AFTER_STREAK  = 1800   # 30 min après 3 pertes d'affilée
+MAX_DRAWDOWN_FROM_PEAK = 0.20   # halt if drawdown from session peak exceeds 20%
 
 
 @dataclass
 class MarketSession:
     start_bankroll: float       = 0.0
     current_bankroll: float     = 0.0
+    peak_bankroll: float        = 0.0
     session_pnl: float          = 0.0
     consecutive_losses: int     = 0
     cooldown_until: float       = 0.0
     daily_triggered: bool       = False
+    drawdown_triggered: bool    = False
     total_trades: int           = 0
     wins: int                   = 0
     losses: int                 = 0
@@ -31,6 +34,12 @@ class MarketSession:
     def open_exposure(self) -> float:
         return sum(self.category_exposure.values())
 
+    @property
+    def drawdown_pct(self) -> float:
+        if self.peak_bankroll <= 0:
+            return 0.0
+        return round((self.peak_bankroll - self.current_bankroll) / self.peak_bankroll, 4)
+
 
 class CircuitBreaker:
     _sessions: Dict[int, MarketSession] = {}
@@ -42,6 +51,7 @@ class CircuitBreaker:
             cls._sessions[user_id] = MarketSession(
                 start_bankroll=bankroll,
                 current_bankroll=bankroll,
+                peak_bankroll=bankroll,
             )
 
     @classmethod
@@ -56,10 +66,15 @@ class CircuitBreaker:
                 return False, "session non initialisée"
             if s.daily_triggered:
                 return False, "circuit breaker journalier actif"
+            if s.drawdown_triggered:
+                return False, "drawdown from peak exceeded — arrêt"
             loss_pct = (s.start_bankroll - s.current_bankroll) / max(s.start_bankroll, 1)
             if loss_pct >= DAILY_LOSS_LIMIT_PCT:
                 s.daily_triggered = True
                 return False, f"daily loss {loss_pct*100:.1f}% — arrêt"
+            if s.drawdown_pct >= MAX_DRAWDOWN_FROM_PEAK:
+                s.drawdown_triggered = True
+                return False, f"drawdown {s.drawdown_pct*100:.1f}% from peak — arrêt"
             now = time.time()
             if s.cooldown_until > now:
                 return False, f"cooldown {int(s.cooldown_until - now)}s"
@@ -73,6 +88,7 @@ class CircuitBreaker:
             if not s:
                 return
             s.current_bankroll = bankroll
+            s.peak_bankroll    = max(s.peak_bankroll, bankroll)
             s.session_pnl     += pnl
             s.total_trades    += 1
             # Libérer l'exposition de ce trade
