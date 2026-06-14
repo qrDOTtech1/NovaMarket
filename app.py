@@ -822,6 +822,25 @@ def _register_routes(app):
             "message": "Tracker réinitialisé — tous les marchés seront ré-analysés",
         })
 
+    # ── Performance Analytics ─────────────────────────────────────────────────
+
+    @app.route("/api/performance")
+    @login_required
+    def api_performance():
+        """
+        Performance analytics: win rates by category/confidence/edge,
+        adaptive thresholds, and signal quality breakdown.
+        """
+        from engine.performance import compute_performance_stats, get_adaptive_thresholds
+        uid = session["user_id"]
+        all_positions = Position.query.filter_by(user_id=uid).all()
+        stats = compute_performance_stats(all_positions)
+        thresholds = get_adaptive_thresholds(all_positions)
+        return jsonify({
+            "stats": stats,
+            "adaptive_thresholds": thresholds,
+        })
+
     # ── Healthcheck Railway ───────────────────────────────────────────────────
 
     @app.route("/health")

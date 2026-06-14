@@ -423,7 +423,8 @@ def estimate_probability(article_title: str, article_summary: str,
 
 
 def batch_analyze(articles: list, markets: list,
-                  blocked_market_ids: set = None) -> list:
+                  blocked_market_ids: set = None,
+                  adaptive_thresholds: dict = None) -> list:
     """
     Analyse batch : pour chaque article → marchés impactés → signaux.
     Retourne liste triée de signal dicts.
@@ -502,10 +503,13 @@ def batch_analyze(articles: list, markets: list,
             edge      = abs(estimated - current_prob)
             conf      = analysis["confidence"]
 
-            # Seuils restaurés : Perplexity est non-déterministe (web search),
-            # donc on a besoin de haute confiance + large edge pour valider un signal
-            MIN_EDGE = 0.12  # 12% minimum (était 10%)
-            MIN_CONF = 60    # 60% minimum (était 40%, réduit à 30)
+            # Adaptive thresholds from historical performance, or defaults
+            if adaptive_thresholds:
+                MIN_EDGE = adaptive_thresholds.get("min_edge", 0.12)
+                MIN_CONF = adaptive_thresholds.get("min_confidence", 60)
+            else:
+                MIN_EDGE = 0.12
+                MIN_CONF = 60
 
             if edge < MIN_EDGE or conf < MIN_CONF:
                 logger.debug(f"[AI] Signal rejeté: {question[:50]}… edge={edge:.0%} conf={conf}% "
