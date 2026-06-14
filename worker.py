@@ -19,6 +19,8 @@ from engine.ai_analyst import (batch_analyze, check_ai_available,
 from engine.market_tracker import MarketTracker
 from engine.risk import get_size, expected_value, roi_if_win, MAX_ACTIVE_POSITIONS
 from engine.circuit_breaker import CircuitBreaker
+from engine.performance import (compute_performance_stats, get_adaptive_thresholds,
+                                check_smart_exit, score_signal_quality)
 
 logger = logging.getLogger(__name__)
 
@@ -148,6 +150,20 @@ class MarketWorker(threading.Thread):
 
         CircuitBreaker.init(self.user_id, bankroll)
 
+        # Load adaptive thresholds from historical performance
+        all_positions = Position.query.filter_by(user_id=self.user_id).all()
+        self._adaptive = get_adaptive_thresholds(all_positions)
+        perf_stats = compute_performance_stats(all_positions)
+        if perf_stats["total"] >= 20:
+            self._log("info", "📈",
+                      f"Adaptive thresholds: edge≥{self._adaptive['min_edge']:.0%} "
+                      f"conf≥{self._adaptive['min_confidence']}% "
+                      f"({self._adaptive['reason']})")
+        self._category_winrates = {
+            cat: s["winrate"] / 100
+            for cat, s in perf_stats.get("by_category", {}).items()
+        }
+
         while not self._stop.is_set():
             now = time.time()
             try:
@@ -265,7 +281,8 @@ class MarketWorker(threading.Thread):
         snapshot_before = set(self._analyzed_this_session)
         try:
             signals = batch_analyze(articles, self._markets,
-                                    blocked_market_ids=self._analyzed_this_session)
+                                    blocked_market_ids=self._analyzed_this_session,
+                                    adaptive_thresholds=getattr(self, '_adaptive', None))
         except AIUnavailableError as e:
             self._log("error", "🚫",
                       f"IA indisponible en cours de session : {e} — "
@@ -429,8 +446,11 @@ class MarketWorker(threading.Thread):
                       f"edge={edge:.0%} conf={conf}%"
                       + (f" | news: {art_source}" if art_source != "polymarket" else ""))
 
-            # Enregistrer dans le CSV — signal ou non
-            has_signal = edge >= 0.12 and conf >= 60
+            # Enregistrer dans le CSV — signal or not (use adaptive thresholds)
+            adapt = getattr(self, '_adaptive', None)
+            _min_edge = adapt["min_edge"] if adapt else 0.12
+            _min_conf = adapt["min_confidence"] if adapt else 60
+            has_signal = edge >= _min_edge and conf >= _min_conf
             side_candidate = "YES" if estimated > current_prob else "NO"
             self._tracker.mark(
                 mkey, mid, question,
@@ -527,11 +547,17 @@ class MarketWorker(threading.Thread):
 
         ev = expected_value(sig["estimated_prob"], sig["entry_price"], size)
 
+        # Signal quality scoring with time-weight and category performance
+        cat_wr = self._category_winrates.get(category, 0.5) if hasattr(self, '_category_winrates') else 0.5
+        hours_left = market.get("_hours_left", 72)
+        sq = score_signal_quality(edge, conf, 30, hours_left, cat_wr)
+
         self._log("info", "📊",
                   f"Signal [{side} {question[:50]}…] | "
                   f"mkt={sig['current_prob']:.0%} → IA={sig['estimated_prob']:.0%} "
                   f"edge={edge:.0%} conf={conf}% | "
-                  f"taille={size:.2f}$ EV={ev:+.2f}$")
+                  f"taille={size:.2f}$ EV={ev:+.2f}$ | "
+                  f"quality={sq['grade']}({sq['score']:.0f})")
 
         if self.simulate:
             # Simulation — pas de vrai ordre, juste un ID fictif
@@ -658,6 +684,26 @@ class MarketWorker(threading.Thread):
                         self._log("warning", "🛡️",
                                   f"LOSS [{pos.side}] {pos.market_question[:60]}… | "
                                   f"{pnl:.2f}$")
+                else:
+                    # Smart exit check for unresolved positions
+                    if prices:
+                        exit_signal = check_smart_exit(pos, current_yes)
+                        if exit_signal and exit_signal["action"] == "TAKE_PROFIT":
+                            self._log("info", "💰",
+                                      f"TAKE PROFIT signal [{pos.side}] "
+                                      f"{pos.market_question[:50]}… | "
+                                      f"{exit_signal['reason']}")
+                        elif exit_signal and exit_signal["action"] == "STOP_LOSS":
+                            self._log("warning", "🔻",
+                                      f"STOP LOSS signal [{pos.side}] "
+                                      f"{pos.market_question[:50]}… | "
+                                      f"{exit_signal['reason']}")
+                        elif exit_signal and exit_signal["action"] == "REVIEW":
+                            self._log("info", "⏰",
+                                      f"REVIEW needed [{pos.side}] "
+                                      f"{pos.market_question[:50]}… | "
+                                      f"{exit_signal['reason']}")
+
                 db.session.commit()
             except Exception as e:
                 logger.error(f"[NM] check_positions error: {e}")
